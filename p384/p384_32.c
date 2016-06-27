@@ -6,22 +6,37 @@
 #include<stdint.h>
 #include<stdbool.h>
 #include<assert.h>
+#include<stdio.h>
+#include<string.h>
 #include "p384_32.h"
 
 
 /* Constants */
 /* We use little-endian arrays */
 static const uint32_t prime[12] = {0xffffffff,
-			     0x0,
-			     0x0,
-			     0xffffffff,
-			     0xfffffffe,
-			     0xffffffff,
-			     0xffffffff,
-			     0xffffffff,
-			     0xffffffff,
-			     0xffffffff,
-			     0xffffffff};
+				   0x0,
+				   0x0,
+				   0xffffffff,
+				   0xfffffffe,
+				   0xffffffff,
+				   0xffffffff,
+				   0xffffffff,
+				   0xffffffff,
+				   0xffffffff,
+				   0xffffffff,
+				   0xffffffff};
+static const uint32_t primes2[12] = {0xfffffffd,
+				     0x0,
+				     0x0,
+				     0xffffffff,
+				     0xfffffffe,
+				     0xffffffff,
+				     0xffffffff,
+				     0xffffffff,
+				     0xffffffff,
+				     0xffffffff,
+				     0xffffffff,
+                                     0xffffffff};
 static uint64_t mask_lo = 0x00000000ffffffff;
 
 static const uint32_t Rsqr[12] = {0x1,
@@ -34,18 +49,49 @@ static const uint32_t Rsqr[12] = {0x1,
 				  0x2,
 				  0x1,
 				  0x0,
-				  0x0};
+				  0x0,
+                                  0x0};
+static const uint32_t R[12]={0x1,
+			     0xffffffff,
+			     0xffffffff,
+			     0x0,
+			     0x1,
+			     0x0,
+			     0x0,
+			     0x0,
+			     0x0,
+			     0x0,
+			     0x0,
+                             0x0};
 
 
 /* Arithmetic */
 typedef uint32_t felem[12];
+/*Debug function */
+static void printval(char *name, const felem val){
+  printf("%s = ", name);
+  for(int i=0; i<11; i++){
+    printf("2**(32*%u)*%u+", i, val[i]);
+  }
+  printf("2**(32*11)*%u\n", val[11]);
+}
+
+static void printmulval(char *name, const uint32_t val[25]){
+  printf("%s = ", name);
+  for(int i=0; i<24; i++){
+    printf("2**(32*%u)*%u+", i, val[i]);
+  }
+  printf("2**(32*24)*%u\n", val[24]);
+}
 
 static void reduce_add_sub(felem r, uint32_t carry){
+  printval("redr", r);
+  printf("carval = %u \n", carry);
   uint64_t t;
   uint32_t d[12];
   uint32_t b = 0;
   uint32_t pb = 0;
-  uint32_t nb = 0;
+  uint32_t do_sub;
   uint32_t mask_sub;
   uint32_t mask_nosub;
   /* Now need to compare r and carry to prime, and if greater subtract in constant time */
@@ -59,19 +105,19 @@ static void reduce_add_sub(felem r, uint32_t carry){
   /* It should be the case that we only potentially need one subtraction. So if carry is set, should have pb set */
   /* Will do target tests (somehow: need to expose more internals. Or use test routines here)*/
   assert((carry && pb) || !carry);
-  pb -= carry;
-  nb = 1 - pb;
-  mask_sub = (uint32_t) -nb; //assume 2's complement
-  mask_nosub = (uint32_t) -pb;
+  do_sub = 1 - ((carry+pb)&0x01);
+  mask_sub = (uint32_t) -do_sub; //assume 2's complement
+  mask_nosub = ~ mask_sub;
   for(int i=0; i<12; i++){
     r[i] = (mask_nosub & r[i]) | (mask_sub & d[i]);
   }
+  printval("redres", r);
+  printf("print \"redadsub: \", (redr+carval*2**384) %% prime == redres %% prime, \"carry:\", carval\n");
 }
 
 static void add(felem r, const felem a, const felem b){
   uint32_t carry = 0;
   uint64_t t;
-  
   /* This part should be done with add/adc or replaced with asm loop if we want to go per-cpu */
   for(int i=0; i<12; i++){
     t = (uint64_t) a[i] + (uint64_t) b[i] + carry;
@@ -99,22 +145,33 @@ static void sub(felem r, const felem a, const felem b){
   reduce_add_sub(r, carry);
 }
 
-static void mont_red(felem r, uint32_t p[24]){ /* Does a clobber */
-  uint32_t carry =0;
+static void prod_red(felem r, uint32_t p[25]){ /* Broken why?*/
   uint64_t t;
-  uint32_t d;
+  uint32_t carry;
+  uint32_t m;
+  printmulval("initval", p);
   for(int i=0; i<12; i++){
-    d=p[i];
-    for(int j=0; j<12; j++){
-      t = (uint64_t)p[i+j]+d*prime[j]+carry;
-      p[i+j] = t & mask_lo;
+    m=p[i];
+    carry=0;
+    for(int j=0; j<12; j++){ /* This adds a multiple of prime that makes p[i] zero */
+      t = (uint64_t)p[i+j]+((uint64_t)m)*prime[j]+carry;
+      p[i+j] = (uint32_t)(t & mask_lo);
+      carry = t >> 32;
+    }
+    for(int j=12; j<25; j++){
+      t = (uint64_t)p[i+j]+carry;
+      p[i+j] = (uint32_t) (t & mask_lo);
       carry = t >> 32;
     }
   }
+  printmulval("finitval", p);
+  printf("print \"loop: \", initval %% prime == finitval %% prime\n");
   for(int i=0; i<12; i++){
     r[i] = p[12+i];
   }
-  reduce_add_sub(r, 0);
+  reduce_add_sub(r, p[24]);
+  printval("reduced_r", r);
+  printf("print \"reduction: \", reduced_r*R %% prime == finitval %% prime \n");
 }
 
 /* Question: how to multiply by 2, 3, and 8? A: 2 is easy, as is 3. For 8 multiply by 2 four times*/
@@ -133,58 +190,80 @@ static void mul8(felem c, felem a){
   mul2(c, t);
 }
 
-static void mult(felem r, const felem a, const felem b){
-  uint32_t prod[24];
+static void mult_nored(uint32_t prod[25], const felem a, const felem b){
   uint64_t t;
   uint32_t carry;
-  for(int i=0; i<24; i++){
+  for(int i=0; i<25; i++){
     prod[i]=0;
   }
-  for(int i=0; i<12; i++){ /*TODO: optimize */
+  for(int i=0; i<12; i++){ /*TODO: check correctness */
     carry = 0;
     for(int j=0; j<12; j++){
-      t = (uint64_t) a[i]*b[j]+carry+prod[i+j];
+      t = ((uint64_t) a[i])*b[j]+carry+prod[i+j];
       prod[i+j] = (uint32_t) (t & mask_lo);
       carry = t >> 32;
     }
     prod[12+i]=carry;
   }
-  mont_red(r, prod);
 }
 
+static void mult(felem r, const felem a, const felem b){
+  uint32_t prod[25];
+  printval("mula", a);
+  printval("mulb", b);
+  mult_nored(prod, a, b);
+  printmulval("prod", prod);
+  printf("print \"mul:\", mula*mulb == prod\n");
+  prod_red(r, prod);
+  printval("mulr", r);
+  printf("print \"red:\", (mulr*R) %% prime == mula*mulb %% prime\n");
+  printf("print \n");
+}
 /* Now for some packing and unpacking */
-/* These also do conversion */
+/* These don't do conversion */
 static void pack(unsigned char *out, felem r){ /*Big endian*/
-  uint32_t tmp[24]; /*Need to divide by R */
-  uint32_t space[12];
   for(int i=0; i<12; i++){
-    tmp[12+i] = 0;
-    tmp[i] = r[i];
-  }
-  mont_red(space, tmp);
-  for(int i=0; i<12; i++){
-    for(int j=0; j<4; j++){
-      out[4*(11-i)+j]=space[i]>>(24-8*j) & 0xff;
-    }
+    out[4*(11-i)+3] = r[i] & 0xff;
+    out[4*(11-i)+2] = (r[i]>>8) & 0xff;
+    out[4*(11-i)+1] = (r[i]>>16) & 0xff;
+    out[4*(11-i)] = (r[i]>>24) & 0xff;
+    
   }
 }
 
 static void unpack(felem r, unsigned char *in){
-  felem tmp;
   for(int i=0; i<12; i++) {
-    tmp[i] = in[4*(11-i)] |
-      in [4*(11-i)+1] << 8 |
-      in [4*(11-i)+2] << 16 |
-      in [4*(11-i)+3] << 24;
+    r[i] = in[4*(11-i)] << 24|
+      in[4*(11-i)+1] << 16|
+      in[4*(11-i)+2] << 8 |
+      in[4*(11-i)+3];
   }
-  mult(r, tmp, Rsqr);
 }
 
-/* And we need to invert in the field via CRT. */
-/* Solution: simple double and add */
-static void inverse(felem r, felem a){
-  felem t;
+static void to_mont(felem r, felem a){
+  mult(r, a, Rsqr);
 }
+
+static void from_mont(felem r, felem a){
+  felem one = {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  mult(r, a, one);
+}
+/* And we need to invert in the field via CRT. */
+/* Solution: simple double and add (for now) */
+static void inv(felem r, const felem a){ /* Cannot be in place */
+   for(int i=0; i<48; i++){
+    r[i]=R[i];
+  }
+  for(int i=11; i>=0; i--){ /* start at the high value bit*/
+    for(int j=31; j>=0; j--){
+      mult(r, r, r);
+      if((primes2[i]>>j) & 0x1){
+	mult(r, r, a);
+      }
+    }
+  }
+}
+
 /* Operations on the curve in Jacobian coordinates using readditions */
 
 
@@ -193,3 +272,44 @@ static void inverse(felem r, felem a){
 /* Table based multiplication routines */
 
 /* Interface to outside world */
+
+/* Test routine: called main because I am lazy */
+int main(){
+  felem a;
+  felem b;
+  felem c;
+  felem d;
+  felem e;
+  for(int i=0; i<12; i++){
+    a[i]=0;
+    b[i]=0;
+    c[i]=0;
+    d[i]=0;
+    e[i]=0;
+  }
+  printval("prime", prime);
+  printval("R", R);
+  printf("print R == 2**384 %% prime\n");
+  a[0]=15;
+  a[11]=47;
+  a[3]=5;
+  unsigned char out[48];
+  unsigned char out2[48];
+  to_mont(c, a);
+  from_mont(b, c);
+  pack(out, b);
+  pack(out2, a);
+  if(memcmp(out2, out, 48)){
+    printf("print \"Failed Montgomery conversions a/o mult!\" \n");
+  }
+  mult(c, a, b);
+  inv(d, b);
+  mult(e, c, d);
+  printval("a", a);
+  printval("b", b);
+  printval("c", c);
+  printval("d", d);
+  printval("e", e);
+  printf("print e %% prime == a %% prime\n");
+  
+}
