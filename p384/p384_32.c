@@ -173,9 +173,10 @@ static void sub(felem r, const felem a, const felem b){ /* Will need testing*/
   reduce_add_sub(r, carry);
 }
 
-static void prod_red(felem r, uint32_t p[25]){ /* Broken why?*/
+static void prod_red(felem r, uint32_t p[25]){
   uint64_t t;
   uint32_t carry;
+  uint32_t delayed[13]={0};
   uint32_t m;
   for(int i=0; i<12; i++){
     m=p[i];
@@ -185,16 +186,15 @@ static void prod_red(felem r, uint32_t p[25]){ /* Broken why?*/
       p[i+j] = (uint32_t)(t & mask_lo);
       carry = t >> 32;
     }
-    for(int j=12+i; j<25; j++){
-      t = (uint64_t)p[j]+carry;
-      p[j] = (uint32_t) (t & mask_lo);
-      carry = t >> 32;
-    }
+    delayed[i]=carry;
   }
+  carry=0;
   for(int i=0; i<12; i++){
-    r[i] = p[12+i];
+    t = ((uint64_t)p[i+12])+carry+delayed[i];
+    r[i] = t & mask_lo;
+    carry = t>>32;
   }
-  reduce_add_sub(r, p[24]);
+  reduce_add_sub(r, delayed[12]+p[24]+carry);
 }
 
 /* Question: how to multiply by 2, 3, and 8? A: 2 is easy, as is 3. For 8 multiply by 2 four times*/
@@ -225,7 +225,7 @@ static void mult_nored(uint32_t prod[25], const felem a, const felem b){
   for(int i=0; i<25; i++){
     prod[i]=0;
   }
-  for(int i=0; i<12; i++){ /*TODO: check correctness */
+  for(int i=0; i<12; i++){ /*TODO: Karastuba?*/
     carry = 0;
     for(int j=0; j<12; j++){
       t = ((uint64_t) a[i])*b[j]+carry+prod[i+j];
@@ -241,6 +241,42 @@ static void mult(felem r, const felem a, const felem b){
   mult_nored(prod, a, b);
   prod_red(r, prod);
 }
+
+static void sqr(felem r, const felem a){ /* Doesn't seem to help very much*/
+  uint32_t prod[25];
+  uint64_t t;
+  uint32_t carry;
+  for(int i=0; i<25; i++){
+    prod[i]=0;
+  }
+  
+  for(int i=0; i<12; i++){
+    carry = 0;
+    for(int j=i+1; j<12; j++){
+      t = ((uint64_t) a[i])*a[j]+carry+prod[i+j];
+      prod[i+j] = (uint32_t) (t & mask_lo);
+      carry = t >> 32;
+    }
+    prod[12+i]=carry;
+  }
+  carry=0;
+  for(int i=0; i<25; i++){
+    t = ((uint64_t) prod[i])*2+carry;
+    prod[i] = (uint32_t) t;
+    carry = t >> 32;
+  }
+  carry=0;
+  for(int i=0; i<12; i++){
+    t=((uint64_t) a[i])*a[i]+carry+prod[2*i];
+    prod[2*i] = t & mask_lo;
+    carry = t >> 32;
+    t = ((uint64_t) prod[2*i+1])+carry;
+    prod[2*i+1] = t & mask_lo;
+    carry = t>>32;
+  }
+  prod_red(r, prod);
+}
+
 /* Now for some packing and unpacking */
 /* These don't do conversion */
 static void pack(unsigned char *out, const felem r){ /*Big endian*/
@@ -253,7 +289,7 @@ static void pack(unsigned char *out, const felem r){ /*Big endian*/
   }
 }
 
-static void unpack(felem r, unsigned char *in){
+static void unpack(felem r, const unsigned char *in){
   for(int i=0; i<12; i++) {
     r[i] = in[4*(11-i)] << 24|
       in[4*(11-i)+1] << 16|
@@ -311,7 +347,7 @@ static void neg_conditional(felem r, const felem a, uint32_t cond){ /* Should tr
   uint32_t mask_nodiff;
   for(int i=0; i<12; i++){
     t = (uint64_t) prime[i];
-    brw = t < a[i]+pbrw;
+    brw = t < (uint64_t)a[i]+pbrw;
     t += (uint64_t) brw << 32;
     t -= (uint64_t) a[i] + pbrw;
     diff[i] = (uint32_t) (t & mask_lo); /* There is no carry because a<prime */
@@ -391,23 +427,23 @@ static void double_pt(felem x3, felem y3, felem z3, const felem x1, const felem 
   felem t10;
   felem t11;
   felem t12;
-  mult(delta, z1, z1); //specialize square after working
-  mult(gamma, y1, y1);
+  sqr(delta, z1); //specialize square after working
+  sqr(gamma, y1);
   mult(beta, x1, gamma);
   sub(t0, x1, delta);
   add(t1, x1, delta);
   mult(t2, t0, t1);
   mul3(alpha, t2);
-  mult(t3, alpha, alpha);
+  sqr(t3, alpha);
   mul8(t4, beta);
   sub(x3, t3, t4);
   add(t5, y1, z1);
-  mult(t6, t5,t5);
+  sqr(t6, t5);
   sub(t7, t6, gamma);
   sub(z3, t7, delta);
   mul4(t8, beta);
   sub(t9, t8, x3);
-  mult(t10, gamma, gamma);
+  sqr(t10, gamma);
   mul8(t11, t10);
   mult(t12, alpha, t9);
   sub(y3, t12, t11);
@@ -500,6 +536,7 @@ static void add_pt_tot(felem x3, felem y3, felem z3, const felem x1, const felem
   sub(t14, t13, z2z2);
   mult(z3, t14, h);
 }
+
 static void add_pt_const(felem x3, felem y3, felem z3, const felem x1, const felem y1, const felem z1, const felem x2, const felem y2, const felem z2){
   /* Produces junk if used to add a point to itself or points at infinity. This is ok: we use flags and constant time moves*/
   felem z1z1;
@@ -528,8 +565,8 @@ static void add_pt_const(felem x3, felem y3, felem z3, const felem x1, const fel
   felem t12;
   felem t13;
   felem t14;
-  mult(z1z1, z1, z1);
-  mult(z2z2, z2, z2);
+  sqr(z1z1, z1);
+  sqr(z2z2, z2);
   mult(u1, z2z2, x1);
   mult(u2, z1z1, x2);
   mult(t0, z2, z2z2);
@@ -538,12 +575,12 @@ static void add_pt_const(felem x3, felem y3, felem z3, const felem x1, const fel
   mult(s2, y2, t1);
   sub(h, u2, u1);
   mul2(t2, h);
-  mult(i, t2, t2);
+  sqr(i, t2);
   mult(j, h, i);
   sub(t3, s2, s1);
   mul2(r, t3);
   mult(v, u1, i);
-  mult(t4, r, r);
+  sqr(t4, r);
   mul2(t5, v);
   sub(t6, t4, j);
   sub(x3, t6,t5);
@@ -553,7 +590,63 @@ static void add_pt_const(felem x3, felem y3, felem z3, const felem x1, const fel
   mult(t10, r, t7);
   sub(y3, t10, t9);
   add(t11, z1, z2);
-  mult(t12, t11, t11);
+  sqr(t12, t11);
+  sub(t13, t12, z1z1);
+  sub(t14, t13, z2z2);
+  mult(z3, t14, h);
+}
+
+static void readd_pt_const(felem x3, felem y3, felem z3, const felem x1, const felem y1, const felem z1, const felem x2, const felem y2, const felem z2, const felem z2z2, const felem z2z2z2){
+  /* Produces junk if used to add a point to itself or points at infinity. This is ok: we use flags and constant time moves*/
+  felem z1z1;
+  felem u1;
+  felem u2;
+  felem t1;
+  felem t2;
+  felem s1;
+  felem s2;
+  felem h;
+  felem i;
+  felem j;
+  felem t3;
+  felem r;
+  felem v;
+  felem t4;
+  felem t5;
+  felem t6;
+  felem t7;
+  felem t8;
+  felem t9;
+  felem t10;
+  felem t11;
+  felem t12;
+  felem t13;
+  felem t14;
+  felem z2z2_recalc;
+  sqr(z1z1, z1);
+   mult(u1, z2z2, x1);
+  mult(u2, z1z1, x2);
+  mult(s1, y1, z2z2z2);
+  mult(t1, z1, z1z1);
+  mult(s2, y2, t1);
+  sub(h, u2, u1);
+  mul2(t2, h);
+  sqr(i, t2);
+  mult(j, h, i);
+  sub(t3, s2, s1);
+  mul2(r, t3);
+  mult(v, u1, i);
+  sqr(t4, r);
+  mul2(t5, v);
+  sub(t6, t4, j);
+  sub(x3, t6,t5);
+  sub(t7, v, x3);
+  mult(t8, s1, j);
+  mul2(t9, t8);
+  mult(t10, r, t7);
+  sub(y3, t10, t9);
+  add(t11, z1, z2);
+  sqr(t12, t11);
   sub(t13, t12, z1z1);
   sub(t14, t13, z2z2);
   mult(z3, t14, h);
@@ -569,20 +662,8 @@ static void to_affine(felem x2, felem y2, const felem x1, const felem y1, const 
   mult(y2, y1, zr);
 }
 
-/*
-static void readd_comp;
 
-static void readd_pt */
-/* Table based multiplication routines */
-static void select_pt(felem x, felem y, felem z, felem table[][3], int index, int size){
-  for(int i=0; i<size; i++){
-    cmov(x, table[i][0], index==i);
-    cmov(y, table[i][1], index==i);
-    cmov(z, table[i][2], index==i);
-  }
-}
-
-static void scalarmult(felem x_out, felem y_out, const felem x_in, const felem y_in, unsigned char key[48]){
+static void scalarmult(felem x_out, felem y_out, const felem x_in, const felem y_in, const unsigned char key[48]){
   felem xm;
   felem ym;
   bool correct;
@@ -593,6 +674,8 @@ static void scalarmult(felem x_out, felem y_out, const felem x_in, const felem y
   to_mont(ym, y_in);
   felem xQ, yQ, zQ;
   felem xR, yR, zR;
+  felem xT, yT, zT,zzT, zzzT;
+  felem table[16][5];
   for(int i=0; i<12; i++){
     xQ[i]=0;
     yQ[i]=0;
@@ -600,20 +683,49 @@ static void scalarmult(felem x_out, felem y_out, const felem x_in, const felem y
   }
   mov(xQ, R);
   mov(yQ, R); //Q is pt at infinity
+  mov(table[1][0], xm);
+  mov(table[1][1], ym);
+  mov(table[1][2], R);
+  sqr(table[1][3], table[1][2]);
+  mult(table[1][4], table[1][2], table[1][3]);
+  for(int i=2; i<16; i++){
+    if(i %2 == 1){
+      add_pt_const(table[i][0], table[i][1], table[i][2], table[i-1][0], table[i-1][1], table[i-1][2],
+		   xm, ym, R);
+    }else{
+      double_pt(table[i][0], table[i][1], table[i][2], table[i/2][0], table[i/2][1], table[i/2][2]);
+    }
+    sqr(table[i][3], table[i][2]);
+    mult(table[i][4], table[i][3], table[i][2]);
+  }
+  bool first = 1;
   bool seen_1 = 0;
   for(int i=47; i>=0; i--){ //little-endian
-    for(int j=7; j>=0; j--){
-      bool before_double = oncurve(xQ, yQ, zQ, false);
-      double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
-      bool bit = (key[i]>>j) & 0x1;
-      add_pt_const(xR, yR, zR, xQ, yQ, zQ, xm, ym, R);
-      cmov(xR, xm, (1-seen_1));
-      cmov(yR, ym, (1-seen_1));
-      cmov(zR, R, (1-seen_1));
-      seen_1 = seen_1 | bit;
-      cmov(xQ, xR, bit);
-      cmov(yQ, yR, bit);
-      cmov(zQ, zR, bit);
+    for(int j=4; j>=0; j-=4){
+      if(!first){
+	double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
+	double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
+	double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
+	double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
+      }
+      first = 0;
+      int index = (key[i]>>j) & 0xf;
+      int valid_point = (index!=0); //check constant time
+      for(int k=0; k<16; k++){
+	cmov(xT, table[k][0], k==index);
+	cmov(yT, table[k][1], k==index);
+	cmov(zT, table[k][2], k==index);
+	cmov(zzT, table[k][3], k==index);
+	cmov(zzzT, table[k][4], k==index);
+      }
+      readd_pt_const(xR, yR, zR, xQ, yQ, zQ, xT, yT, zT, zzT, zzzT);
+      cmov(xR, xT, (1-seen_1));
+      cmov(yR, yT, (1-seen_1));
+      cmov(zR, zT, (1-seen_1));
+      seen_1 = seen_1 | valid_point;
+      cmov(xQ, xR, valid_point);
+      cmov(yQ, yR, valid_point);
+      cmov(zQ, zR, valid_point);
     }
   }
   to_affine(x_out, y_out, xQ, yQ, zQ);
@@ -622,54 +734,34 @@ static void scalarmult(felem x_out, felem y_out, const felem x_in, const felem y
 }
 
 /* Interface to outside world */
-
-/* Test routine: called main because I am lazy */
-/* TODO: KAT tests+others/real testing harness*/
-int main(){
-  felem Ax;
-  felem Ay;
-  felem Bx;
-  felem By;
-  felem Kax;
-  felem Kbx;
-  felem Kay;
-  felem Kby;
-  felem bxmont;
-  felem bymont;
-  unsigned char alicesk[48];
-  unsigned char bobsk[48];
-  for(int i=0; i<48; i++){
-    alicesk[i]=17;
-    bobsk[i]=19;
-  }
-  printval("R", R);
-  printval("prime", prime);
-  printval("base_x", base_x);
-  printval("base_y", base_y);
-  printval("curve_b", curve_b);
-  printf("print \"pyparam:\", (base_y**2) %% prime == (base_x**3-3*base_x+curve_b) %% prime\n");
+bool p384_32_valid(unsigned char p[96]){
+  felem x;
+  felem y;
   felem one = {1};
-  if(!oncurve(base_x, base_y, one, true)){
-    printf("print \"Params: \", False\n");
+  unpack(x, p);
+  unpack(y, p+48);
+  return oncurve(x, y, one, true);
+}
+
+void p384_32_scalarmult(unsigned char q[96], const unsigned char n[48], const unsigned char p[96]){
+  felem x;
+  felem y;
+  unpack(x, p);
+  unpack(y, p+48);
+  felem one = {1};
+  if(!oncurve(x, y, one, true)){
+    p384_32_scalarmult_base(q, n);
+  }else{
+    scalarmult(x, y, x, y, n);
+    pack(q, x);
+    pack(q+48, y);
   }
-  to_mont(bxmont, base_x);
-  to_mont(bymont, base_y);
-  if(!oncurve(bxmont, bymont, R, false)){
-    printf("print \"Montparams:\", False \n");
-  }
-  scalarmult(Ax, Ay, base_x, base_y, alicesk);
-  if(!oncurve(Ax, Ay, one, true)){
-    printf("print \"Scalarmult alicesk failed\"\n");
-  }
-  scalarmult(Bx, By, base_x, base_y, bobsk);
-    if(!oncurve(Ax, Ay, one, true)){
-    printf("print \"Scalarmult bobsk failed\"\n");
-  }
-  scalarmult(Kax, Kay, Bx, By, alicesk);
-  scalarmult(Kbx, Kby, Ax, Ay, bobsk);
-  if(!equal(Kax, Kbx)){
-    printf("print \"DH:\", False\n");
-  } else {
-    printf("print \"DH:\", True\n");
-    }
+}
+
+void p384_32_scalarmult_base(unsigned char q[96], const unsigned char n[48]){
+  felem x;
+  felem y;
+  scalarmult(x, y, base_x, base_y, n);
+  pack(q, x);
+  pack(q+48, y);
 }
