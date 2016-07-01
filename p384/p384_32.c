@@ -506,20 +506,18 @@ add_pt_tot(felem x3, felem y3, felem z3, const felem x1, const felem y1,
       double_pt(x3, y3, z3, x1, y1, z1);
       return;
     } else {
-      for (int k = 0; k < 12; k++) {
-        x3[k] = 0;
-        y3[k] = 0;
-        z3[k] = 0;
+      mov(x3, R);
+      mov(y3, R);
+      for(int i=0; i<12; i++){
+	z3[i]=0;
       }
-      x3[0] = 1;
-      y3[0] = 1;
       return;
     }
   }
   mul2(t2, h);
   mult(i, t2, t2);
   mult(j, h, i);
-  sub(t2, s2, s1);
+  sub(t3, s2, s1);
   mul2(r, t3);
   mult(v, u1, i);
   mult(t4, r, r);
@@ -717,8 +715,7 @@ scalarmult(felem x_out, felem y_out, const felem x_in, const felem y_in,
   felem xm;
   felem ym;
   bool correct;
-  /*Note, we need to make sure that the key is < order for correctness */
-  /* For now double and add. Tables and signed NAF later */
+  /* Note, we need to make sure that the key is < order for correctness */
   /* Remember z==1, in montgomery form is R */
   to_mont(xm, x_in);
   to_mont(ym, y_in);
@@ -788,6 +785,80 @@ scalarmult(felem x_out, felem y_out, const felem x_in, const felem y_in,
   from_mont(y_out, y_out);
 }
 
+static void
+scalarmult_double(felem x, felem y, const felem x1, const felem y1, const unsigned char *s1, const felem x2, const felem y2, const unsigned char *s2){
+  felem xQ, yQ, zQ;
+  felem yT;
+  felem x1m, y1m, x2m, y2m;
+  char r_d1[77];
+  char r_s1[77];
+  char r_d2[77];
+  char r_s2[77];
+  felem table1[17][3];
+  felem table2[17][3];
+  to_mont(x1m, x1);
+  to_mont(x2m, x2);
+  to_mont(y1m, y1);
+  to_mont(y2m, y2);
+  for(int i=0; i<12; i++){
+    zQ[i]=0;
+  }
+  mov(xQ, R);
+  mov(yQ, R);
+  mov(table1[0][0], xQ);
+  mov(table2[0][0], xQ);
+  mov(table1[0][1], yQ);
+  mov(table2[0][1], yQ);
+  mov(table1[0][2], zQ);
+  mov(table2[0][2], zQ);
+  mov(table1[1][0], x1m);
+  mov(table1[1][1], y1m);
+  mov(table1[1][2], R);
+  mov(table2[1][0], x2m);
+  mov(table2[1][1], y2m);
+  mov(table2[1][2], R);
+  for (int i = 2; i < 17; i++) {
+    if (i % 2 == 1) {
+      add_pt_const(table1[i][0], table1[i][1], table1[i][2], table1[i - 1][0],
+                   table1[i - 1][1], table1[i - 1][2], x1m, y1m, R);
+       add_pt_const(table2[i][0], table2[i][1], table2[i][2], table2[i - 1][0],
+                   table2[i - 1][1], table2[i - 1][2], x2m, y2m, R);
+    } else {
+      double_pt(table1[i][0], table1[i][1], table1[i][2], table1[i / 2][0],
+                table1[i / 2][1], table1[i / 2][2]);
+      double_pt(table2[i][0], table2[i][1], table2[i][2], table2[i / 2][0],
+		table2[i / 2][1], table2[i / 2][2]);
+    }
+  }
+  recode(r_d1, r_s1, s1);
+  recode(r_d2, r_s2, s2);
+  int first = 1;
+  for(int i=76; i>=0; i--){
+    if(!first){
+      assert(oncurve(xQ, yQ, zQ, false));
+      double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
+      double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
+      double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
+      double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
+      double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
+      assert(oncurve(xQ, yQ, zQ, false));
+    } 
+    mov(yT, table1[r_d1[i]][1]);
+    neg_conditional(yT, yT, r_s1[i]);
+    add_pt_tot(xQ, yQ, zQ, xQ, yQ, zQ, table1[r_d1[i]][0], yT, table1[r_d1[i]][2]);
+    assert(oncurve(xQ, yQ, zQ, false));
+    mov(yT, table2[r_d2[i]][1]);
+    neg_conditional(yT, yT, r_s2[i]);
+    assert(oncurve(xQ, yQ, zQ, false));
+    add_pt_tot(xQ, yQ, zQ, xQ, yQ, zQ, table2[r_d2[i]][0], yT, table2[r_d2[i]][2]);
+    assert(oncurve(xQ, yQ, zQ, false));
+    first = 0;
+  }
+  to_affine(x, y, xQ, yQ, zQ);
+  from_mont(x, x);
+  from_mont(y, y);
+}
+
 /* Interface to outside world */
 bool
 p384_32_valid(unsigned char p[96])
@@ -826,4 +897,17 @@ p384_32_scalarmult_base(unsigned char q[96], const unsigned char n[48])
   scalarmult(x, y, base_x, base_y, n);
   pack(q, x);
   pack(q + 48, y);
+}
+
+void
+p384_32_double_scalarmult_base(unsigned char q[96], const unsigned char a[96], const unsigned char n1[48], const unsigned char n2[48]){
+  felem x_a;
+  felem y_a;
+  felem x;
+  felem y;
+  unpack(x_a, a);
+  unpack(y_a, a+48);
+  scalarmult_double(x, y, base_x, base_y, n1, x_a, y_a, n2);
+  pack(q, x);
+  pack(q+48, y);
 }

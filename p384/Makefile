@@ -1,5 +1,5 @@
-CFLAGS=-g -O3 -m32
-CC=clang-mp-3.9 -m32
+CFLAGS=-g -O3
+CC=clang-mp-3.9
 LDFLAGS=
 .PHONY: all
 all: p384_32_test p384_32_time
