@@ -1,10 +1,11 @@
-#include "p384_32.h"
 #include <fcntl.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include "p384_32.h"
 
 int
 main()

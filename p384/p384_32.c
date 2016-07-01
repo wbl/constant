@@ -3,12 +3,13 @@
  * Can replace with assembler intrinsics. Heck, can do the   *
  * whole thing with assembler */
 
-#include "p384_32.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+#include "p384_32.h"
 
 /* Constants */
 /* We use little-endian arrays */
