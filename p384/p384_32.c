@@ -405,7 +405,7 @@ double_pt(felem x3, felem y3, felem z3, const felem x1, const felem y1,
   /* As the order is not divisible by 2, impossible to double finite point and
    * get infinity */
   /* Also works for point at infinity (assuming correct representation */
-  /* TODO: color */
+  /* TODO: color to reduce stack usage*/
   /* From the EFD dbl-2001-b */
   felem delta;
   felem gamma;
@@ -424,26 +424,26 @@ double_pt(felem x3, felem y3, felem z3, const felem x1, const felem y1,
   felem t10;
   felem t11;
   felem t12;
-  sqr(delta, z1); // specialize square after working
-  sqr(gamma, y1);
-  mult(beta, x1, gamma);
-  sub(t0, x1, delta);
-  add(t1, x1, delta);
-  mult(t2, t0, t1);
-  mul3(alpha, t2);
-  sqr(t3, alpha);
-  mul8(t4, beta);
-  sub(x3, t3, t4);
-  add(t5, y1, z1);
-  sqr(t6, t5);
-  sub(t7, t6, gamma);
-  sub(z3, t7, delta);
-  mul4(t8, beta);
-  sub(t9, t8, x3);
-  sqr(t10, gamma);
-  mul8(t11, t10);
-  mult(t12, alpha, t9);
-  sub(y3, t12, t11);
+  sqr(delta, z1); /* delta = Z2^2 */
+  sqr(gamma, y1); /* gamma = Y1^2 */
+  mult(beta, x1, gamma); /* beta = X1*gamma */
+  sub(t0, x1, delta); /* t0=X1*delta */
+  add(t1, x1, delta); /* t1 = X1+delta */
+  mult(t2, t0, t1);  /* t2 = t0+t1 */
+  mul3(alpha, t2); /* alpha = 3*t2 */
+  sqr(t3, alpha); /* t3 = alpha^2 */
+  mul8(t4, beta); /* t4 = 8*beta */
+  sub(x3, t3, t4); /* X3 = t3-t4 */
+  add(t5, y1, z1); /* t5 = Y1+Z1 */
+  sqr(t6, t5); /* t6 = t5^2 */
+  sub(t7, t6, gamma); /* t7 = t6-gamma */
+  sub(z3, t7, delta); /* Z3 = t7-delta */
+  mul4(t8, beta); /* t8 = 4*beta */
+  sub(t9, t8, x3); /* t9 = t8-X3 */
+  sqr(t10, gamma); /* t10 = gamma^2 */
+  mul8(t11, t10); /* t11 = 8*t10 */
+  mult(t12, alpha, t9); /* t12 = alpha*t9 */
+  sub(y3, t12, t11); /* Y3 = t12-t11 */
 }
 
 static void
@@ -543,7 +543,8 @@ add_pt_const(felem x3, felem y3, felem z3, const felem x1, const felem y1,
              const felem z1, const felem x2, const felem y2, const felem z2)
 {
   /* Produces junk if used to add a point to itself or points at infinity. This
-   * is ok: we use flags and constant time moves*/
+   * is ok: we use flags and constant time moves */
+  /* Formula is from the Explicit Formula Database: add-2007-bl*/
   felem z1z1;
   felem z2z2;
   felem u1;
@@ -570,35 +571,35 @@ add_pt_const(felem x3, felem y3, felem z3, const felem x1, const felem y1,
   felem t12;
   felem t13;
   felem t14;
-  sqr(z1z1, z1);
-  sqr(z2z2, z2);
-  mult(u1, z2z2, x1);
-  mult(u2, z1z1, x2);
-  mult(t0, z2, z2z2);
-  mult(s1, y1, t0);
-  mult(t1, z1, z1z1);
-  mult(s2, y2, t1);
-  sub(h, u2, u1);
-  mul2(t2, h);
-  sqr(i, t2);
-  mult(j, h, i);
-  sub(t3, s2, s1);
-  mul2(r, t3);
-  mult(v, u1, i);
-  sqr(t4, r);
-  mul2(t5, v);
-  sub(t6, t4, j);
-  sub(x3, t6, t5);
-  sub(t7, v, x3);
-  mult(t8, s1, j);
-  mul2(t9, t8);
-  mult(t10, r, t7);
-  sub(y3, t10, t9);
-  add(t11, z1, z2);
-  sqr(t12, t11);
-  sub(t13, t12, z1z1);
-  sub(t14, t13, z2z2);
-  mult(z3, t14, h);
+  sqr(z1z1, z1); /* Z1Z1 = Z1^2 */
+  sqr(z2z2, z2); /* Z2Z2 = Z2^2 */
+  mult(u1, z2z2, x1); /* U1 = X1*Z2Z2 */
+  mult(u2, z1z1, x2); /* U2 = X2*Z1Z1 */
+  mult(t0, z2, z2z2); /* t0 = Z2*Z2Z2 */
+  mult(s1, y1, t0); /* S1 = Y1*t0 */
+  mult(t1, z1, z1z1); /* t1 = Z1*Z1Z1 */
+  mult(s2, y2, t1); /* S2 = Y2*t1 */
+  sub(h, u2, u1); /* H = U2-U1 */
+  mul2(t2, h); /* t2 = 2*H */
+  sqr(i, t2); /* I = t2^2 */
+  mult(j, h, i); /* J = H*I */
+  sub(t3, s2, s1); /* t3 = S2-S1 */
+  mul2(r, t3); /* r = 2* t3 */
+  mult(v, u1, i); /* V = U1*I */
+  sqr(t4, r); /* t4 = r^2 */
+  mul2(t5, v); /* t5 = 2*V */
+  sub(t6, t4, j); /* t6 = t4-J */
+  sub(x3, t6, t5); /* X3 = t6-t5*/
+  sub(t7, v, x3); /* t7 = V-X3 */
+  mult(t8, s1, j); /* t8 = S1*J */
+  mul2(t9, t8); /* t9 = 2*t8 */
+  mult(t10, r, t7); /* t10 = r*t7 */
+  sub(y3, t10, t9); /* Y3 = t10-t9 */
+  add(t11, z1, z2); /* t11 = Z1+Z2 */
+  sqr(t12, t11); /* t12 = t11^2 */
+  sub(t13, t12, z1z1); /* t13 = t12-Z1Z1 */
+  sub(t14, t13, z2z2); /* t14 = t13-Z2Z2 */
+  mult(z3, t14, h); /* Z3 = t14*H */
 }
 
 static void
@@ -608,6 +609,7 @@ readd_pt_const(felem x3, felem y3, felem z3, const felem x1, const felem y1,
 {
   /* Produces junk if used to add a point to itself or points at infinity. This
    * is ok: we use flags and constant time moves*/
+  /* Same as above code, only removes some calculations that are passed in*/
   felem z1z1;
   felem u1;
   felem u2;
@@ -632,7 +634,6 @@ readd_pt_const(felem x3, felem y3, felem z3, const felem x1, const felem y1,
   felem t12;
   felem t13;
   felem t14;
-  felem z2z2_recalc;
   sqr(z1z1, z1);
   mult(u1, z2z2, x1);
   mult(u2, z1z1, x2);
