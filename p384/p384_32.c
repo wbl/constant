@@ -6,9 +6,8 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
-
+#include <stdio.h>
 #include "p384_32.h"
 
 /* Constants */
@@ -42,26 +41,6 @@ static const uint32_t base_y[12] = { 0x90ea0e5f, 0x7a431d7c, 0x1d7e819d,
                                      0x5d9e98bf, 0x96262c6f, 0x3617de4a };
 /* Arithmetic */
 typedef uint32_t felem[12];
-/*Debug function */
-static void
-printval(char* name, const felem val)
-{
-  printf("%s = ", name);
-  for (int i = 0; i < 11; i++) {
-    printf("2**(32*%u)*%u+", i, val[i]);
-  }
-  printf("2**(32*11)*%u\n", val[11]);
-}
-
-static void
-printmulval(char* name, const uint32_t val[25])
-{
-  printf("%s = ", name);
-  for (int i = 0; i < 24; i++) {
-    printf("2**(32*%u)*%u+", i, val[i]);
-  }
-  printf("2**(32*24)*%u\n", val[24]);
-}
 
 static void
 reduce_add_sub(felem r, uint32_t carry)
@@ -564,7 +543,6 @@ readd_pt_tot(felem x3, felem y3, felem z3, const felem x1, const felem y1,
   felem z1z1;
   felem u1;
   felem u2;
-  felem t0;
   felem t1;
   felem t2;
   felem s1;
@@ -638,6 +616,7 @@ readd_pt_tot(felem x3, felem y3, felem z3, const felem x1, const felem y1,
   sub(t14, t13, z2z2);
   mult(z3, t14, h);
 }
+
 static void
 add_pt_const(felem x3, felem y3, felem z3, const felem x1, const felem y1,
              const felem z1, const felem x2, const felem y2, const felem z2)
@@ -798,13 +777,13 @@ recode(int out_d[77], int out_s[77], const unsigned char key[48])
         carry = sub;
         out_d[k] = word;
         out_s[k] = sub;
+	assert(word<=16);
         k++;
         word = 0;
         bits = 0;
       }
     }
   }
-  word = word << 2;
   word = word + carry;
   out_d[76] = word;
   out_s[76] = 0;
@@ -835,6 +814,11 @@ scalarmult(felem x_out, felem y_out, const felem x_in, const felem y_in,
   }
   mov(xQ, R);
   mov(yQ, R); // Q is pt at infinity
+  mov(table[0][0], xQ);
+  mov(table[0][1], yQ);
+  mov(table[0][2], zQ);
+  mov(table[0][3], zQ);
+  mov(table[0][4], zQ);
   mov(table[1][0], xm);
   mov(table[1][1], ym);
   mov(table[1][2], R);

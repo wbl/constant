@@ -72,13 +72,27 @@ main()
   ask[0]=1;
   p384_32_scalarmult_base(basepoint, ask);
   ask[0]=255;
+  ask[1]=255;
   p384_32_scalarmult_base(result, ask);
-  for(int i=1; i<255; i++){
+  for(int i=0; i<=255; i++){
     ask[0]=i;
+    ask[1]=255-i;
     bsk[0]=255-i;
+    bsk[1]=i;
     p384_32_double_scalarmult_base(B, basepoint, ask, bsk);
     if(memcmp(B, result, 96)){
       printf("Doublemult failure with %i and %i\n", ask[0], bsk[0]);
     }
+  }
+  ask[0]=0;
+  ask[1]=1;
+  p384_32_scalarmult_base(result, ask);
+  ask[0]=250;
+  bsk[0]=6;
+  ask[1]=0;
+  bsk[1]=0;
+  p384_32_double_scalarmult_base(B, basepoint, ask, bsk);
+  if(memcmp(B, result, 96)){
+    printf("Doublemult failure on carry!\n");
   }
 }
