@@ -283,23 +283,46 @@ from_mont(felem r, const felem a)
   felem one = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
   mult(r, a, one);
 }
+
+static void
+mov(felem r, const felem a)
+{
+  for (int i = 0; i < 12; i++) {
+    r[i] = a[i];
+  }
+}
+
 /* And we need to invert in the field via CRT. */
-/* Solution: simple double and add (for now) */
+
 static void
 inv(felem r, const felem a)
 { /* Cannot be in place */
   for (int i = 0; i < 12; i++) {
     r[i] = R[i];
   }
+  felem table[16];
+  mov(table[0], R);
+  mov(table[1], a);
+  for(int i=2; i<16; i++){
+    mult(table[i], table[i-1], a);
+  }
+  int first = 1;
   for (int i = 11; i >= 0; i--) { /* start at the high value bit*/
-    for (int j = 31; j >= 0; j--) {
+    for (int j = 28; j >= 0; j-=4) {
+      if(!first){
       mult(r, r, r);
-      if ((primes2[i] >> j) & 0x1) {
-        mult(r, r, a);
+      mult(r, r, r);
+      mult(r, r, r);
+      mult(r, r, r);
+      }
+      first = 0;
+      if ((primes2[i] >> j) & 0xf) {
+        mult(r, r, table[(primes2[i] >> j)&0xf]);
       }
     }
   }
 }
+
 static bool
 equal(const felem a, const felem b)
 { // Can leak *result*
@@ -341,14 +364,6 @@ neg_conditional(felem r, const felem a, uint32_t cond)
   mask_nodiff = ~mask_diff;
   for (int i = 0; i < 12; i++) {
     r[i] = (diff[i] & mask_diff) | (a[i] & mask_nodiff);
-  }
-}
-
-static void
-mov(felem r, const felem a)
-{
-  for (int i = 0; i < 12; i++) {
-    r[i] = a[i];
   }
 }
 
@@ -537,6 +552,93 @@ add_pt_tot(felem x3, felem y3, felem z3, const felem x1, const felem y1,
 }
 
 static void
+readd_pt_tot(felem x3, felem y3, felem z3, const felem x1, const felem y1,
+	     const felem z1, const felem x2, const felem y2, const felem z2,
+	     const felem z2z2, const felem z2z2z2)
+{
+  /* Special cases: z1 or z2 zero=> return the other point
+     if we are doubling: use the doubling.
+     if we produce infinity: set the output correctly */
+  /* Uses add-2007-bl. Note that test z1, z2, for pt at infinity (so return
+   * other one) and H for either double or inverse (return infinity)*/
+  felem z1z1;
+  felem u1;
+  felem u2;
+  felem t0;
+  felem t1;
+  felem t2;
+  felem s1;
+  felem s2;
+  felem h;
+  felem i;
+  felem j;
+  felem t3;
+  felem r;
+  felem v;
+  felem t4;
+  felem t5;
+  felem t6;
+  felem t7;
+  felem t8;
+  felem t9;
+  felem t10;
+  felem t11;
+  felem t12;
+  felem t13;
+  felem t14;
+  if (iszero(z1)) {
+    mov(x3, x2);
+    mov(y3, y2);
+    mov(z3, z2);
+    return;
+  } else if (iszero(z2)) {
+    mov(x3, x1);
+    mov(y3, y1);
+    mov(z3, z1);
+    return;
+  }
+  mult(z1z1, z1, z1);
+  mult(u1, z2z2, x1);
+  mult(u2, z1z1, x2);
+  mult(s1, y1, z2z2z2);
+  mult(t1, z1, z1z1);
+  mult(s2, y2, t1);
+  sub(h, u2, u1);
+  if (iszero(h)) {
+    if (equal(s1, s2)) {
+      double_pt(x3, y3, z3, x1, y1, z1);
+      return;
+    } else {
+      mov(x3, R);
+      mov(y3, R);
+      for(int i=0; i<12; i++){
+	z3[i]=0;
+      }
+      return;
+    }
+  }
+  mul2(t2, h);
+  mult(i, t2, t2);
+  mult(j, h, i);
+  sub(t3, s2, s1);
+  mul2(r, t3);
+  mult(v, u1, i);
+  mult(t4, r, r);
+  mul2(t5, v);
+  sub(t6, t4, j);
+  sub(x3, t6, t5);
+  sub(t7, v, x3);
+  mult(t8, s1, j);
+  mul2(t9, t8);
+  mult(t10, r, t7);
+  sub(y3, t10, t9);
+  add(t11, z1, z2);
+  mult(t12, t11, t11);
+  sub(t13, t12, z1z1);
+  sub(t14, t13, z2z2);
+  mult(z3, t14, h);
+}
+static void
 add_pt_const(felem x3, felem y3, felem z3, const felem x1, const felem y1,
              const felem z1, const felem x2, const felem y2, const felem z2)
 {
@@ -674,7 +776,7 @@ to_affine(felem x2, felem y2, const felem x1, const felem y1, const felem z1)
 }
 
 static void
-recode(char out_d[77], char out_s[77], const unsigned char key[48])
+recode(int out_d[77], int out_s[77], const unsigned char key[48])
 {
   /* We use a signed representation where digits are -15, -14,... 16 */
   /* Below encodes it in constant time */
@@ -723,8 +825,8 @@ scalarmult(felem x_out, felem y_out, const felem x_in, const felem y_in,
   felem xR, yR, zR;
   felem xT, yT, zT, zzT, zzzT;
   felem table[17][5];
-  char recoded_index[77];
-  char recoded_sign[77];
+  int recoded_index[77];
+  int recoded_sign[77];
   recode(recoded_index, recoded_sign, key);
   for (int i = 0; i < 12; i++) {
     xQ[i] = 0;
@@ -790,12 +892,12 @@ scalarmult_double(felem x, felem y, const felem x1, const felem y1, const unsign
   felem xQ, yQ, zQ;
   felem yT;
   felem x1m, y1m, x2m, y2m;
-  char r_d1[77];
-  char r_s1[77];
-  char r_d2[77];
-  char r_s2[77];
-  felem table1[17][3];
-  felem table2[17][3];
+  int r_d1[77];
+  int r_s1[77];
+  int r_d2[77];
+  int r_s2[77];
+  felem table1[17][5];
+  felem table2[17][5];
   to_mont(x1m, x1);
   to_mont(x2m, x2);
   to_mont(y1m, y1);
@@ -811,12 +913,20 @@ scalarmult_double(felem x, felem y, const felem x1, const felem y1, const unsign
   mov(table2[0][1], yQ);
   mov(table1[0][2], zQ);
   mov(table2[0][2], zQ);
+  mov(table1[0][3], zQ);
+  mov(table2[0][3], zQ);
+  mov(table1[0][4], zQ);
+  mov(table2[0][4], zQ);
   mov(table1[1][0], x1m);
   mov(table1[1][1], y1m);
   mov(table1[1][2], R);
+  mov(table1[1][3], R);
+  mov(table1[1][4], R);
   mov(table2[1][0], x2m);
   mov(table2[1][1], y2m);
   mov(table2[1][2], R);
+  mov(table2[1][3], R);
+  mov(table2[1][4], R);
   for (int i = 2; i < 17; i++) {
     if (i % 2 == 1) {
       add_pt_const(table1[i][0], table1[i][1], table1[i][2], table1[i - 1][0],
@@ -829,29 +939,33 @@ scalarmult_double(felem x, felem y, const felem x1, const felem y1, const unsign
       double_pt(table2[i][0], table2[i][1], table2[i][2], table2[i / 2][0],
 		table2[i / 2][1], table2[i / 2][2]);
     }
+    sqr(table1[i][3], table1[i][2]);
+    mult(table1[i][4], table1[i][3], table1[i][2]);
+    sqr(table2[i][3], table2[i][2]);
+    mult(table2[i][4], table2[i][3], table2[i][2]);
+    
   }
   recode(r_d1, r_s1, s1);
   recode(r_d2, r_s2, s2);
   int first = 1;
   for(int i=76; i>=0; i--){
     if(!first){
-      assert(oncurve(xQ, yQ, zQ, false));
       double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
       double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
       double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
       double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
       double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
-      assert(oncurve(xQ, yQ, zQ, false));
-    } 
-    mov(yT, table1[r_d1[i]][1]);
-    neg_conditional(yT, yT, r_s1[i]);
-    add_pt_tot(xQ, yQ, zQ, xQ, yQ, zQ, table1[r_d1[i]][0], yT, table1[r_d1[i]][2]);
-    assert(oncurve(xQ, yQ, zQ, false));
-    mov(yT, table2[r_d2[i]][1]);
-    neg_conditional(yT, yT, r_s2[i]);
-    assert(oncurve(xQ, yQ, zQ, false));
-    add_pt_tot(xQ, yQ, zQ, xQ, yQ, zQ, table2[r_d2[i]][0], yT, table2[r_d2[i]][2]);
-    assert(oncurve(xQ, yQ, zQ, false));
+    }
+    if(r_d1[i]){
+      mov(yT, table1[r_d1[i]][1]);
+      neg_conditional(yT, yT, r_s1[i]);
+      readd_pt_tot(xQ, yQ, zQ, xQ, yQ, zQ, table1[r_d1[i]][0], yT, table1[r_d1[i]][2], table1[r_d1[i]][3], table1[r_d1[i]][4]);
+    }
+    if(r_d2[i]){
+      mov(yT, table2[r_d2[i]][1]);
+      neg_conditional(yT, yT, r_s2[i]);
+      readd_pt_tot(xQ, yQ, zQ, xQ, yQ, zQ, table2[r_d2[i]][0], yT, table2[r_d2[i]][2], table2[r_d2[i]][3], table2[r_d2[i]][4]);
+    }
     first = 0;
   }
   to_affine(x, y, xQ, yQ, zQ);
