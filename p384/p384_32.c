@@ -1,3 +1,8 @@
+/* Copyright (c) Watson Ladd (Mozilla) 2016 *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 /* A constant time 32 bit implementation of P384             *
  * We use 64 bit words in our multiply and addition routines *
  * Can replace with assembler intrinsics. Heck, can do the   *
