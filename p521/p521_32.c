@@ -709,6 +709,23 @@ to_affine(felem x2, felem y2, const felem x1, const felem y1, const felem z1)
   mult(y2, y1, zr);
 }
 
+static bool
+oncurve(const felem x, const felem y, const felem z)
+{
+  felem z2, z4, z6, t0, t1, t2, t3, t4, t5, ysqr, rhs;
+  mult(z2, z, z);
+  mult(z4, z2, z2);
+  mult(z6, z4, z2);
+  mult(t0, curve_b, z6);
+  mult(t1, x, z4);
+  mul3(t2, t1);
+  mult(t3, x, x);
+  mult(t4, t3, x);
+  sub(t5, t4, t2);
+  add(rhs, t5, t0);
+  mult(ysqr, y, y);
+  return equal(ysqr, rhs);
+}
 /* Now the functions we want */
 
 /*Scalar is big endian*/
@@ -768,4 +785,14 @@ p521_32_scalarmult_base(unsigned char q[132], const unsigned char n[66]){
   to_affine(xout, yout, x2, y2, z2);
   pack(q, xout);
   pack(q+66, yout);
+}
+
+bool
+p521_32_valid(const unsigned char p[132]){
+  felem x;
+  felem y;
+  felem one={1};
+  unpack(x, p);
+  unpack(y, p+66);
+  return oncurve(x, y, one);
 }
