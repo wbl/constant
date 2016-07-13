@@ -133,14 +133,18 @@ int main(){
   unsigned char pkey[96];
   unsigned char digest[48];
   unsigned char signature[96];
-  for(int i=0; i<100; i++){
+  for(int i=0; i<1000; i++){
     randombytes(key, 48);
     randombytes(digest, 48);
     key[47]=0;
     p384_32_scalarmult_base(pkey, key);
     ecdsa_sign(signature, digest, key);
     if(!ecdsa_verify(signature, digest, pkey)){
-      printf("Ecdsa fail\n");
+      printf("Ecdsa failure to verify valid signature\n");
+    }
+    digest[0]=digest[0]+1;
+    if(ecdsa_verify(signature,digest,pkey)){
+      printf("Ecdsa failure to reject invalid signature\n");
     }
   }
 }

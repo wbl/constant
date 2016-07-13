@@ -52,6 +52,30 @@ main()
     printf("\n\n");
   }
 
+  for(int i=0; i<48; i++){
+    ask[i]=0;
+  }
+  printf("Taking base times order \n");
+  p384_32_scalarmult_base(A, ask);
+  for(int i=0; i<96; i++){
+    if(A[i]){
+      printf("Failure to compute point at infinity as all zeros\n");
+    }
+  }
+  read(fd, bsk, 48);
+  bsk[47] = 0;
+  p384_32_scalarmult_base(B, bsk);
+  printf("Computed a point\n");
+  p384_32_scalarmult(A, ask, B);
+  int flag = 0;
+  for(int i=0; i<96; i++){
+    if(A[i]){
+      flag = 1;
+    }
+  }
+  if(flag){
+    printf("failure to properly compute point at infinity!\n");
+  }
   for (int i = 0; i < 100; i++) {
     read(fd, ask, 48);
     read(fd, bsk, 48);

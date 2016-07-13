@@ -1,4 +1,4 @@
-CFLAGS=-g -I/opt/local/include
+CFLAGS=-g -I/opt/local/include -O3
 CC=clang-mp-3.9
 LDFLAGS=-lgmp -L/opt/local/lib
 .PHONY: all

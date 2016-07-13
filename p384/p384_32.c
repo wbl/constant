@@ -423,7 +423,7 @@ double_pt(felem x3, felem y3, felem z3, const felem x1, const felem y1,
   felem t10;
   felem t11;
   felem t12;
-  sqr(delta, z1); /* delta = Z2^2 */
+  sqr(delta, z1); /* delta = Z1^2 */
   sqr(gamma, y1); /* gamma = Y1^2 */
   mult(beta, x1, gamma); /* beta = X1*gamma */
   sub(t0, x1, delta); /* t0=X1*delta */
@@ -956,6 +956,7 @@ scalarmult_double(felem x, felem y, const felem x1, const felem y1, const unsign
       readd_pt_tot(xQ, yQ, zQ, xQ, yQ, zQ, table2[r_d2[i]][0], yT, table2[r_d2[i]][2], table2[r_d2[i]][3], table2[r_d2[i]][4]);
     }
     first = 0;
+    assert(oncurve(xQ, yQ, zQ, false));
   }
   to_affine(x, y, xQ, yQ, zQ);
   from_mont(x, x);
@@ -980,15 +981,18 @@ p384_32_scalarmult(unsigned char q[96], const unsigned char n[48],
 {
   felem x;
   felem y;
+  felem x_t;
+  felem y_t;
   unpack(x, p);
   unpack(y, p + 48);
   felem one = { 1 };
   if (!oncurve(x, y, one, true)) {
+    printf("Invalid point used\n");
     p384_32_scalarmult_base(q, n);
   } else {
-    scalarmult(x, y, x, y, n);
-    pack(q, x);
-    pack(q + 48, y);
+    scalarmult(x_t, y_t, x, y, n);
+    pack(q, x_t);
+    pack(q + 48, y_t);
   }
 }
 
@@ -1000,6 +1004,9 @@ p384_32_scalarmult_base(unsigned char q[96], const unsigned char n[48])
   scalarmult(x, y, base_x, base_y, n);
   pack(q, x);
   pack(q + 48, y);
+  if(!p384_32_valid(q)){
+    printf("base produced wrong result!\n");
+  }
 }
 
 void
