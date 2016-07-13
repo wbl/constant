@@ -1,8 +1,10 @@
 #include<assert.h>
 #include<fcntl.h>
+#include<stdbool.h>
 #include<stdint.h>
 #include<stdio.h>
 #include<unistd.h>
+#include "p521_32.h"
 /* Copyright (c) Watson Ladd (Mozilla) 2016 *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -12,6 +14,7 @@
    ordinary arithmetic with NIST reduction method. The top word is
    only 9 bits, and so we don't carry out of it on additions*/
 
+/* Constants */
 typedef uint32_t felem[17];
 
 static felem prime = {0xffffffff,
@@ -32,8 +35,80 @@ static felem prime = {0xffffffff,
                       0xffffffff,
                       0x1ff};
 
+static felem primes2 = {0xfffffffd,
+                        0xffffffff,
+                        0xffffffff,
+                        0xffffffff,
+                        0xffffffff,
+                        0xffffffff,
+                        0xffffffff,
+                        0xffffffff,
+                        0xffffffff,
+                        0xffffffff,
+                        0xffffffff,
+                        0xffffffff,
+                        0xffffffff,
+                        0xffffffff,
+                        0xffffffff,
+                        0xffffffff,
+                        0x1ff};
+
 static uint64_t mask_lo = 0x00000000ffffffff;
 
+static felem curveb={0x6b503f00,
+                     0xef451fd4,
+                     0x3d2c34f1,
+                     0x3573df88,
+                     0x3bb1bf07,
+                     0x1652c0bd,
+                     0xec7e937b,
+                     0x56193951,
+                     0x8ef109e1,
+                     0xb8b48991,
+                     0x99b315f3,
+                     0xa2da725b,
+                     0xb68540ee,
+                     0x929a21a0,
+                     0x8e1c9a1f,
+                     0x953eb961,
+                     0x51};
+
+static felem base_x = {0xc2e5bd66,
+                       0xf97e7e31,
+                       0x856a429b,
+                       0x3348b3c1,
+                       0xa2ffa8de,
+                       0xfe1dc127,
+                       0xefe75928,
+                       0xa14b5e77,
+                       0x6b4d3dba,
+                       0xf828af60,
+                       0x53fb521,
+                       0x9c648139,
+                       0x2395b442,
+                       0x9e3ecb66,
+                       0x404e9cd,
+                       0x858e06b7,
+                       0xc6};
+
+static felem base_y ={0x9fd16650,
+                      0x88be9476,
+                      0xa272c240,
+                      0x353c7086,
+                      0x3fad0761,
+                      0xc550b901,
+                      0x5ef42640,
+                      0x97ee7299,
+                      0x273e662c,
+                      0x17afbd17,
+                      0x579b4468,
+                      0x98f54449,
+                      0x2c7d1bd9,
+                      0x5c8a5fb4,
+                      0x9a3bc004,
+                      0x39296a78,
+                      0x118};
+/* Debugging */
 static void print_elem(char *name, const felem a){
   printf("%s = 0 ", name);
   for(int i=0; i<17; i++){
@@ -69,19 +144,13 @@ static void reduce_add_sub(felem a){
 static void add(felem r, const felem a, const felem b){
   uint32_t carry = 0;
   uint64_t t;
-  print_elem("a", a);
-  print_elem("b", b);
   for (int i = 0; i < 17; i++) {
     t = (uint64_t)a[i] + (uint64_t)b[i] + carry;
     r[i] = (uint32_t)(t & mask_lo);
     carry = t >> 32;
   }
   assert(carry==0);
-  print_elem("r_nored", r);
   reduce_add_sub(r);
-  print_elem("r_red", r);
-  printf("print \"add_nored\", (a+b) %% prime == r_nored %% prime \n");
-  printf("print \"redcheck\", r_red %% prime == r_nored %% prime \n");
 }
 
 
@@ -92,8 +161,6 @@ sub(felem r, const felem a, const felem b)
   uint64_t t = 0;
   uint32_t brw = 0;
   uint32_t pbrw = 0;
-  print_elem("a", a);
-  print_elem("b", b);
   for (int i = 0; i < 17; i++) { /* Assembler would be great for this.*/
     t = (uint64_t)prime[i] + a[i] + carry;
     brw = t < ((uint64_t)b[i]) + pbrw;
@@ -105,11 +172,7 @@ sub(felem r, const felem a, const felem b)
   }
   assert(carry==0);
   assert(pbrw == 0);
-  print_elem("r_nored", r);
-  printf("print \"sub_nored\", (prime+a-b) %% prime == r_nored %% prime \n");
   reduce_add_sub(r);
-  print_elem("r_red", r);
-  printf("print \"redcheck\", r_red %% prime == r_nored %% prime \n");
 }
 
 static void
@@ -128,7 +191,7 @@ mulred(felem r, const uint32_t t[33]){ /* This is the correct size, even if mult
 }
 
 static void
-mul_nored(uint32_t prod[34], felem a, felem b){
+mul_nored(uint32_t prod[34], const felem a, const felem b){
   uint64_t t;
   uint32_t carry;
   for (int i = 0; i < 34; i++) {
@@ -146,20 +209,80 @@ mul_nored(uint32_t prod[34], felem a, felem b){
 }
 
 static void
-mult(felem r, felem a, felem b){
+mult(felem r, const felem a, const felem b){
   uint32_t prod[34];
-  print_elem("am", a);
-  print_elem("bm", b);
   mul_nored(prod, a, b);
-  printf("prod_nored = 0");
-  for(int i=0; i<34; i++){
-    printf("+2**(32*%d)*%u", i, prod[i]);
-  }
-  printf("\n");
   mulred(r, prod);
-  print_elem("prod", r);
-  printf("print \"prod_nored\", prod_nored == am*bm\n");
-  printf("print \"prod_red\", prod == prod_nored %% prime\n");
+}
+
+static void
+mul2(felem c, const felem a)
+{
+  add(c, a, a);
+}
+static void
+mul3(felem c, const felem a)
+{
+  mul2(c, a);
+  add(c, c, a);
+}
+
+static void
+mul4(felem c, const felem a)
+{
+  mul2(c, a);
+  mul2(c, c);
+}
+
+static void
+mul8(felem c, const felem a)
+{
+  felem t;
+  mul2(c, a);
+  mul2(t, c);
+  mul2(c, t);
+}
+static void
+sqr(felem r, const felem a){
+  mult(r, a, a);
+}
+static void
+mov(felem r, const felem a)
+{
+  for (int i = 0; i < 17; i++) {
+    r[i] = a[i];
+  }
+}
+
+
+static void
+inv(felem r, const felem a)
+{ /* Cannot be in place */
+  for (int i = 0; i < 17; i++) {
+    r[i] = 0;
+  }
+  r[0]=1;
+  felem table[16];
+  mov(table[0], r);
+  mov(table[1], a);
+  for(int i=2; i<16; i++){
+    mult(table[i], table[i-1], a);
+  }
+  int first = 1;
+  for (int i = 16; i >= 0; i--) { /* start at the high value bit*/
+    for (int j = 28; j >= 0; j-=4) {
+      if(!first){
+      mult(r, r, r);
+      mult(r, r, r);
+      mult(r, r, r);
+      mult(r, r, r);
+      }
+      first = 0;
+      if ((primes2[i] >> j) & 0xf) {
+        mult(r, r, table[(primes2[i] >> j)&0xf]);
+      }
+    }
+  }
 }
 
 /* I/O */
@@ -176,7 +299,7 @@ pack(unsigned char s[66], const felem b){
 }
 
 static void
-unpack(felem b, unsigned char s[66]){
+unpack(felem b, const unsigned char s[66]){
   for(int i=0; i<16; i++){
     b[i] = s[(16-i)*4+1] |
       s[(16-i)*4] << 8 |
@@ -186,23 +309,463 @@ unpack(felem b, unsigned char s[66]){
   b[16] = s[0]<<8 | s[1];
 }
 
+static bool
+equal(const felem a, const felem b)
+{ // Can leak *result*
+  uint32_t diff = 0;
+  for (int i = 0; i < 17; i++) {
+    diff |= a[i] ^ b[i];
+  }
+  return diff == 0;
+}
+
+static bool
+iszero(const felem a)
+{
+  uint32_t test = 0;
+  for (int i = 0; i < 17; i++) {
+    test |= a[i];
+  }
+  return test == 0;
+}
+
+static void
+cmov(felem r, const felem a, uint32_t cond)
+{
+  uint32_t mask_set;
+  uint32_t mask_unset;
+  mask_set = (uint32_t)-cond;
+  mask_unset = ~mask_set;
+  for (int i = 0; i < 17; i++) {
+    r[i] = (r[i] & mask_unset) | (a[i] & mask_set);
+  }
+}
+
 /* Curve arithmetic */
 
-int main(){
-  print_elem("prime", prime);
-  printf("print prime == 2**521-1\n");
-  felem a, b, c;
-  unsigned char s_a[66], s_b[66];
-  int fd = open("/dev/urandom", O_RDONLY);
-  for(int i=0; i<10; i++){
-    read(fd, s_a, 66);
-    read(fd, s_b, 66);
-    s_a[0] &= 0x01;
-    s_b[0] &= 0x01;
-    unpack(a, s_a);
-    unpack(b, s_b);
-    add(c, a, b);
-    sub(c, a, b);
-    mult(c, a, b);
+static void
+double_pt(felem x3, felem y3, felem z3, const felem x1, const felem y1,
+          const felem z1)
+{
+  /* As the order is not divisible by 2, impossible to double finite point and
+   * get infinity */
+  /* Also works for point at infinity (assuming correct representation */
+  /* TODO: color to reduce stack usage*/
+  /* From the EFD dbl-2001-b */
+  felem delta;
+  felem gamma;
+  felem beta;
+  felem alpha;
+  felem t0;
+  felem t1;
+  felem t2;
+  felem t3;
+  felem t4;
+  felem t5;
+  felem t6;
+  felem t7;
+  felem t8;
+  felem t9;
+  felem t10;
+  felem t11;
+  felem t12;
+  sqr(delta, z1); /* delta = Z1^2 */
+  sqr(gamma, y1); /* gamma = Y1^2 */
+  mult(beta, x1, gamma); /* beta = X1*gamma */
+  sub(t0, x1, delta); /* t0=X1*delta */
+  add(t1, x1, delta); /* t1 = X1+delta */
+  mult(t2, t0, t1);  /* t2 = t0+t1 */
+  mul3(alpha, t2); /* alpha = 3*t2 */
+  sqr(t3, alpha); /* t3 = alpha^2 */
+  mul8(t4, beta); /* t4 = 8*beta */
+  sub(x3, t3, t4); /* X3 = t3-t4 */
+  add(t5, y1, z1); /* t5 = Y1+Z1 */
+  sqr(t6, t5); /* t6 = t5^2 */
+  sub(t7, t6, gamma); /* t7 = t6-gamma */
+  sub(z3, t7, delta); /* Z3 = t7-delta */
+  mul4(t8, beta); /* t8 = 4*beta */
+  sub(t9, t8, x3); /* t9 = t8-X3 */
+  sqr(t10, gamma); /* t10 = gamma^2 */
+  mul8(t11, t10); /* t11 = 8*t10 */
+  mult(t12, alpha, t9); /* t12 = alpha*t9 */
+  sub(y3, t12, t11); /* Y3 = t12-t11 */
+}
+
+static void
+add_pt_tot(felem x3, felem y3, felem z3, const felem x1, const felem y1,
+           const felem z1, const felem x2, const felem y2, const felem z2)
+{
+  /* Special cases: z1 or z2 zero=> return the other point
+     if we are doubling: use the doubling.
+     if we produce infinity: set the output correctly */
+  /* Uses add-2007-bl. Note that test z1, z2, for pt at infinity (so return
+   * other one) and H for either double or inverse (return infinity)*/
+  felem z1z1;
+  felem z2z2;
+  felem u1;
+  felem u2;
+  felem t0;
+  felem t1;
+  felem t2;
+  felem s1;
+  felem s2;
+  felem h;
+  felem i;
+  felem j;
+  felem t3;
+  felem r;
+  felem v;
+  felem t4;
+  felem t5;
+  felem t6;
+  felem t7;
+  felem t8;
+  felem t9;
+  felem t10;
+  felem t11;
+  felem t12;
+  felem t13;
+  felem t14;
+  if (iszero(z1)) {
+    mov(x3, x2);
+    mov(y3, y2);
+    mov(z3, z2);
+    return;
+  } else if (iszero(z2)) {
+    mov(x3, x1);
+    mov(y3, y1);
+    mov(z3, z1);
+    return;
   }
+  mult(z1z1, z1, z1);
+  mult(z2z2, z2, z2);
+  mult(u1, z2z2, x1);
+  mult(u2, z1z1, x2);
+  mult(t0, z2, z2z2);
+  mult(s1, y1, t0);
+  mult(t1, z1, z1z1);
+  mult(s2, y2, t1);
+  sub(h, u2, u1);
+  if (iszero(h)) {
+    if (equal(s1, s2)) {
+      double_pt(x3, y3, z3, x1, y1, z1);
+      return;
+    } else {
+      for(int i=0; i<12; i++){
+        x3[i]=0;
+        y3[i]=0;
+	z3[i]=0;
+      }
+      x3[0]=1;
+      y3[0]=1;
+      return;
+    }
+  }
+  mul2(t2, h);
+  mult(i, t2, t2);
+  mult(j, h, i);
+  sub(t3, s2, s1);
+  mul2(r, t3);
+  mult(v, u1, i);
+  mult(t4, r, r);
+  mul2(t5, v);
+  sub(t6, t4, j);
+  sub(x3, t6, t5);
+  sub(t7, v, x3);
+  mult(t8, s1, j);
+  mul2(t9, t8);
+  mult(t10, r, t7);
+  sub(y3, t10, t9);
+  add(t11, z1, z2);
+  mult(t12, t11, t11);
+  sub(t13, t12, z1z1);
+  sub(t14, t13, z2z2);
+  mult(z3, t14, h);
+}
+
+static void
+readd_pt_tot(felem x3, felem y3, felem z3, const felem x1, const felem y1,
+	     const felem z1, const felem x2, const felem y2, const felem z2,
+	     const felem z2z2, const felem z2z2z2)
+{
+  /* Special cases: z1 or z2 zero=> return the other point
+     if we are doubling: use the doubling.
+     if we produce infinity: set the output correctly */
+  /* Uses add-2007-bl. Note that test z1, z2, for pt at infinity (so return
+   * other one) and H for either double or inverse (return infinity)*/
+  felem z1z1;
+  felem u1;
+  felem u2;
+  felem t1;
+  felem t2;
+  felem s1;
+  felem s2;
+  felem h;
+  felem i;
+  felem j;
+  felem t3;
+  felem r;
+  felem v;
+  felem t4;
+  felem t5;
+  felem t6;
+  felem t7;
+  felem t8;
+  felem t9;
+  felem t10;
+  felem t11;
+  felem t12;
+  felem t13;
+  felem t14;
+  if (iszero(z1)) {
+    mov(x3, x2);
+    mov(y3, y2);
+    mov(z3, z2);
+    return;
+  } else if (iszero(z2)) {
+    mov(x3, x1);
+    mov(y3, y1);
+    mov(z3, z1);
+    return;
+  }
+  mult(z1z1, z1, z1);
+  mult(u1, z2z2, x1);
+  mult(u2, z1z1, x2);
+  mult(s1, y1, z2z2z2);
+  mult(t1, z1, z1z1);
+  mult(s2, y2, t1);
+  sub(h, u2, u1);
+  if (iszero(h)) {
+    if (equal(s1, s2)) {
+      double_pt(x3, y3, z3, x1, y1, z1);
+      return;
+    } else {
+      for(int i=0; i<12; i++){
+        x3[i]=0;
+        y3[i]=0;
+	z3[i]=0;
+      }
+      x3[0]=1;
+      y3[0]=1;
+      return;
+    }
+  }
+  mul2(t2, h);
+  mult(i, t2, t2);
+  mult(j, h, i);
+  sub(t3, s2, s1);
+  mul2(r, t3);
+  mult(v, u1, i);
+  mult(t4, r, r);
+  mul2(t5, v);
+  sub(t6, t4, j);
+  sub(x3, t6, t5);
+  sub(t7, v, x3);
+  mult(t8, s1, j);
+  mul2(t9, t8);
+  mult(t10, r, t7);
+  sub(y3, t10, t9);
+  add(t11, z1, z2);
+  mult(t12, t11, t11);
+  sub(t13, t12, z1z1);
+  sub(t14, t13, z2z2);
+  mult(z3, t14, h);
+}
+
+static void
+add_pt_const(felem x3, felem y3, felem z3, const felem x1, const felem y1,
+             const felem z1, const felem x2, const felem y2, const felem z2)
+{
+  /* Produces junk if used to add a point to itself or points at infinity. This
+   * is ok: we use flags and constant time moves */
+  /* Formula is from the Explicit Formula Database: add-2007-bl*/
+  felem z1z1;
+  felem z2z2;
+  felem u1;
+  felem u2;
+  felem t0;
+  felem t1;
+  felem t2;
+  felem s1;
+  felem s2;
+  felem h;
+  felem i;
+  felem j;
+  felem t3;
+  felem r;
+  felem v;
+  felem t4;
+  felem t5;
+  felem t6;
+  felem t7;
+  felem t8;
+  felem t9;
+  felem t10;
+  felem t11;
+  felem t12;
+  felem t13;
+  felem t14;
+  sqr(z1z1, z1); /* Z1Z1 = Z1^2 */
+  sqr(z2z2, z2); /* Z2Z2 = Z2^2 */
+  mult(u1, z2z2, x1); /* U1 = X1*Z2Z2 */
+  mult(u2, z1z1, x2); /* U2 = X2*Z1Z1 */
+  mult(t0, z2, z2z2); /* t0 = Z2*Z2Z2 */
+  mult(s1, y1, t0); /* S1 = Y1*t0 */
+  mult(t1, z1, z1z1); /* t1 = Z1*Z1Z1 */
+  mult(s2, y2, t1); /* S2 = Y2*t1 */
+  sub(h, u2, u1); /* H = U2-U1 */
+  mul2(t2, h); /* t2 = 2*H */
+  sqr(i, t2); /* I = t2^2 */
+  mult(j, h, i); /* J = H*I */
+  sub(t3, s2, s1); /* t3 = S2-S1 */
+  mul2(r, t3); /* r = 2* t3 */
+  mult(v, u1, i); /* V = U1*I */
+  sqr(t4, r); /* t4 = r^2 */
+  mul2(t5, v); /* t5 = 2*V */
+  sub(t6, t4, j); /* t6 = t4-J */
+  sub(x3, t6, t5); /* X3 = t6-t5*/
+  sub(t7, v, x3); /* t7 = V-X3 */
+  mult(t8, s1, j); /* t8 = S1*J */
+  mul2(t9, t8); /* t9 = 2*t8 */
+  mult(t10, r, t7); /* t10 = r*t7 */
+  sub(y3, t10, t9); /* Y3 = t10-t9 */
+  add(t11, z1, z2); /* t11 = Z1+Z2 */
+  sqr(t12, t11); /* t12 = t11^2 */
+  sub(t13, t12, z1z1); /* t13 = t12-Z1Z1 */
+  sub(t14, t13, z2z2); /* t14 = t13-Z2Z2 */
+  mult(z3, t14, h); /* Z3 = t14*H */
+}
+
+static void
+readd_pt_const(felem x3, felem y3, felem z3, const felem x1, const felem y1,
+               const felem z1, const felem x2, const felem y2, const felem z2,
+               const felem z2z2, const felem z2z2z2)
+{
+  /* Produces junk if used to add a point to itself or points at infinity. This
+   * is ok: we use flags and constant time moves*/
+  /* Same as above code, only removes some calculations that are passed in*/
+  felem z1z1;
+  felem u1;
+  felem u2;
+  felem t1;
+  felem t2;
+  felem s1;
+  felem s2;
+  felem h;
+  felem i;
+  felem j;
+  felem t3;
+  felem r;
+  felem v;
+  felem t4;
+  felem t5;
+  felem t6;
+  felem t7;
+  felem t8;
+  felem t9;
+  felem t10;
+  felem t11;
+  felem t12;
+  felem t13;
+  felem t14;
+  sqr(z1z1, z1);
+  mult(u1, z2z2, x1);
+  mult(u2, z1z1, x2);
+  mult(s1, y1, z2z2z2);
+  mult(t1, z1, z1z1);
+  mult(s2, y2, t1);
+  sub(h, u2, u1);
+  mul2(t2, h);
+  sqr(i, t2);
+  mult(j, h, i);
+  sub(t3, s2, s1);
+  mul2(r, t3);
+  mult(v, u1, i);
+  sqr(t4, r);
+  mul2(t5, v);
+  sub(t6, t4, j);
+  sub(x3, t6, t5);
+  sub(t7, v, x3);
+  mult(t8, s1, j);
+  mul2(t9, t8);
+  mult(t10, r, t7);
+  sub(y3, t10, t9);
+  add(t11, z1, z2);
+  sqr(t12, t11);
+  sub(t13, t12, z1z1);
+  sub(t14, t13, z2z2);
+  mult(z3, t14, h);
+}
+
+static void
+to_affine(felem x2, felem y2, const felem x1, const felem y1, const felem z1)
+{
+  felem zr;
+  felem zrzr;
+  inv(zr, z1);
+  mult(zrzr, zr, zr);
+  mult(x2, x1, zrzr);
+  mult(zr, zrzr, zr);
+  mult(y2, y1, zr);
+}
+
+/* Now the functions we want */
+
+/*Scalar is big endian*/
+static void
+scalarmult(felem x2, felem y2, felem z2, const felem px, const felem py, const unsigned char scalar[66]){
+  //Double and add for now
+  felem x3, y3, z3;
+  for(int i=0; i<17; i++){
+    x2[i]=0;
+    y2[i]=0;
+    z2[i]=0;
+  }
+  x2[0]=1;
+  y2[0]=1;
+  felem one={1};
+  int seen = 0;
+  for(int i=0; i<66; i++){
+    double_pt(x2, y2, z2, x2, y2, z2); //Check right
+    for(int j=7; j>=0; j--){
+      add_pt_const(x3, y3, z3, x2, y2, z2, px, py, one);
+      cmov(x3, px, !seen);
+      cmov(y3, py, !seen);
+      cmov(z3, one, !seen);
+      cmov(x2, x3, (scalar[i]>>j)&0x1);
+      cmov(y2, y3, (scalar[i]>>j)&0x1);
+      cmov(z2, z3, (scalar[i]>>j)&0x1);
+    }
+  }
+}
+
+/* Publically visible functions */
+void
+p521_32_scalarmult(unsigned char q[132], const unsigned char n[66], const unsigned char p[132]){
+  felem xin;
+  felem yin;
+  felem x2;
+  felem y2;
+  felem z2;
+  felem xout;
+  felem yout;
+  unpack(xin, p);
+  unpack(yin, p+66);
+  scalarmult(x2, y2, z2, xin, yin, n);
+  to_affine(xout, yout, x2, y2, z2);
+  pack(q, xout);
+  pack(q+66, yout);
+}
+
+void
+p521_32_scalarmult_base(unsigned char q[132], const unsigned char n[66]){
+  felem x2;
+  felem y2;
+  felem z2;
+  felem xout;
+  felem yout;
+  scalarmult(x2, y2, z2, base_x, base_y, n);
+  to_affine(xout, yout, x2, y2, z2);
+  pack(q, xout);
+  pack(q+66, yout);
 }
