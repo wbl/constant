@@ -117,6 +117,13 @@ static void print_elem(char *name, const felem a){
   printf("\n");
 }
 
+static bool less_p(const felem b){
+  int i=16;
+  while(b[i]==prime[i]) i--;
+  if(i<0) return false;
+  return b[i]<= prime[i];
+}
+
 /* Field Arithmetic */
 static void reduce_add_sub(felem a){
   uint64_t t;
@@ -142,6 +149,8 @@ static void reduce_add_sub(felem a){
 }
 
 static void add(felem r, const felem a, const felem b){
+  assert(less_p(a));
+  assert(less_p(b));
   uint32_t carry = 0;
   uint64_t t;
   for (int i = 0; i < 17; i++) {
@@ -157,6 +166,8 @@ static void add(felem r, const felem a, const felem b){
 static void
 sub(felem r, const felem a, const felem b)
 { /* Will need testing*/
+    assert(less_p(a));
+    assert(less_p(b));
   uint32_t carry = 0;
   uint64_t t = 0;
   uint32_t brw = 0;
@@ -187,11 +198,14 @@ mulred(felem r, const uint32_t t[33]){ /* This is the correct size, even if mult
     b[i] = (t[16+i]>>9) | (t[17+i] & 0x1ff) << 23;
   }
   b[16] = t[32]>>9;
+  assert(b[16]<=0x1ff);
   add(r, a, b);
 }
 
 static void
 mul_nored(uint32_t prod[34], const felem a, const felem b){
+  assert(less_p(a));
+  assert(less_p(b));
   uint64_t t;
   uint32_t carry;
   for (int i = 0; i < 34; i++) {
@@ -206,6 +220,43 @@ mul_nored(uint32_t prod[34], const felem a, const felem b){
     }
     prod[17 + i] = carry;
   }
+  assert(prod[33]==0);
+}
+
+static void
+sqr(felem r, const felem a){
+  uint32_t prod[34];
+  uint64_t t;
+  uint32_t carry;
+  for (int i = 0; i < 34; i++) {
+    prod[i] = 0;
+  }
+
+  for (int i = 0; i < 17; i++) {
+    carry = 0;
+    for (int j = i + 1; j < 17; j++) {
+      t = ((uint64_t)a[i]) * a[j] + carry + prod[i + j];
+      prod[i + j] = (uint32_t)(t & mask_lo);
+      carry = t >> 32;
+    }
+    prod[17 + i] = carry;
+  }
+  carry = 0;
+  for (int i = 0; i < 34; i++) {
+    t = ((uint64_t)prod[i]) * 2 + carry;
+    prod[i] = (uint32_t)t;
+    carry = t >> 32;
+  }
+  carry = 0;
+  for (int i = 0; i < 17; i++) {
+    t = ((uint64_t)a[i]) * a[i] + carry + prod[2 * i];
+    prod[2 * i] = t & mask_lo;
+    carry = t >> 32;
+    t = ((uint64_t)prod[2 * i + 1]) + carry;
+    prod[2 * i + 1] = t & mask_lo;
+    carry = t >> 32;
+  }
+  mulred(r, prod);
 }
 
 static void
@@ -242,10 +293,7 @@ mul8(felem c, const felem a)
   mul2(t, c);
   mul2(c, t);
 }
-static void
-sqr(felem r, const felem a){
-  mult(r, a, a);
-}
+
 static void
 mov(felem r, const felem a)
 {
@@ -451,7 +499,7 @@ add_pt_tot(felem x3, felem y3, felem z3, const felem x1, const felem y1,
       double_pt(x3, y3, z3, x1, y1, z1);
       return;
     } else {
-      for(int i=0; i<12; i++){
+      for(int i=0; i<17; i++){
         x3[i]=0;
         y3[i]=0;
 	z3[i]=0;
@@ -540,7 +588,7 @@ readd_pt_tot(felem x3, felem y3, felem z3, const felem x1, const felem y1,
       double_pt(x3, y3, z3, x1, y1, z1);
       return;
     } else {
-      for(int i=0; i<12; i++){
+      for(int i=0; i<17; i++){
         x3[i]=0;
         y3[i]=0;
 	z3[i]=0;
@@ -716,7 +764,7 @@ oncurve(const felem x, const felem y, const felem z)
   mult(z2, z, z);
   mult(z4, z2, z2);
   mult(z6, z4, z2);
-  mult(t0, curve_b, z6);
+  mult(t0, curveb, z6);
   mult(t1, x, z4);
   mul3(t2, t1);
   mult(t3, x, x);
@@ -726,36 +774,93 @@ oncurve(const felem x, const felem y, const felem z)
   mult(ysqr, y, y);
   return equal(ysqr, rhs);
 }
-/* Now the functions we want */
+/* Scalar multiplication and associated functions*/
 
-/*Scalar is big endian*/
+/*Scalar is little endian*/
 static void
 scalarmult(felem x2, felem y2, felem z2, const felem px, const felem py, const unsigned char scalar[66]){
   //Double and add for now
-  felem x3, y3, z3;
+  felem xT, yT, zT;
+  felem xR, yR, zR;
+  felem table[16][3];
+  felem one={1};
   for(int i=0; i<17; i++){
+    table[0][0][i]=0;
+    table[0][1][i]=0;
+    table[0][2][i]=0;
     x2[i]=0;
     y2[i]=0;
     z2[i]=0;
   }
   x2[0]=1;
   y2[0]=1;
-  felem one={1};
+  table[0][0][0]=1;
+  table[0][1][0]=1;
+  mov(table[1][0], px);
+  mov(table[1][1], py);
+  mov(table[1][2], one);
+  for(int i=2; i<16; i++){
+    if(i%2==0){
+      double_pt(table[i][0], table[i][1], table[i][2], table[i/2][0], table[i/2][1], table[i/2][2]);
+    }else {
+      add_pt_const(table[i][0], table[i][1], table[i][2], table[i-1][0], table[i-1][1], table[i-1][2],
+             px, py, one);
+    }
+  }
   int seen = 0;
-  for(int i=0; i<66; i++){
-    double_pt(x2, y2, z2, x2, y2, z2); //Check right
-    for(int j=7; j>=0; j--){
-      add_pt_const(x3, y3, z3, x2, y2, z2, px, py, one);
-      cmov(x3, px, !seen);
-      cmov(y3, py, !seen);
-      cmov(z3, one, !seen);
-      cmov(x2, x3, (scalar[i]>>j)&0x1);
-      cmov(y2, y3, (scalar[i]>>j)&0x1);
-      cmov(z2, z3, (scalar[i]>>j)&0x1);
+  int must_double = 0;
+  int index;
+  int valid_entry;
+  for(int i=65; i>=0; i--){
+    for(int j=4; j>=0; j-=4){
+      if(must_double){
+        double_pt(x2, y2, z2, x2, y2, z2); 
+        double_pt(x2, y2, z2, x2, y2, z2); 
+        double_pt(x2, y2, z2, x2, y2, z2);
+        double_pt(x2, y2, z2, x2, y2, z2);
+      }
+      must_double = 1;
+      index = (scalar[i]>>j)&0xf;
+      for(int k=0; k<16; k++){
+        cmov(xT, table[k][0], k==index);
+        cmov(yT, table[k][1], k==index);
+        cmov(zT, table[k][2], k==index);
+      }
+      valid_entry = (index!=0);
+      add_pt_const(xR, yR, zR, x2, y2, z2, xT, yT, zT);
+      cmov(xR, xT, !seen);
+      cmov(yR, yT, !seen);
+      cmov(zR, zT, !seen);
+      cmov(x2, xR, valid_entry);
+      cmov(y2, yR, valid_entry);
+      cmov(z2, zR, valid_entry);
+      seen |= valid_entry;
     }
   }
 }
 
+static void
+double_scalarmult(felem x3, felem y3, felem z3, const unsigned char s1[66], const felem x1, const felem y1, const unsigned char s2[66], const felem x2, const felem y2){
+  for(int i=0; i<17; i++){
+    x3[i]=0;
+    y3[i]=0;
+    z3[i]=0;
+  }
+  x3[0]=1;
+  y3[0]=1;
+  felem one={1};
+  for(int i=65; i>=0; i--){
+    for(int j=7; j>=0; j--){
+      double_pt(x3, y3, z3, x3, y3, z3);
+      if((s1[i]>>j)&0x1){
+        add_pt_tot(x3, y3, z3, x3, y3, z3, x1, y1, one);
+      }
+      if((s2[i]>>j)&0x1){
+        add_pt_tot(x3, y3, z3, x3, y3, z3, x2, y2, one);
+      }
+    }
+  }
+}
 /* Publically visible functions */
 void
 p521_32_scalarmult(unsigned char q[132], const unsigned char n[66], const unsigned char p[132]){
@@ -783,6 +888,19 @@ p521_32_scalarmult_base(unsigned char q[132], const unsigned char n[66]){
   felem yout;
   scalarmult(x2, y2, z2, base_x, base_y, n);
   to_affine(xout, yout, x2, y2, z2);
+  pack(q, xout);
+  pack(q+66, yout);
+}
+
+void
+p521_32_double_scalarmult_base(unsigned char *q, const unsigned char a[132], const unsigned char s1[66], const unsigned char s2[66]){
+  felem x2,y2;
+  felem x3, y3, z3;
+  felem xout, yout;
+  unpack(x2, a);
+  unpack(y2, a+66);
+  double_scalarmult(x3, y3, z3, s1, base_x, base_y, s2, x2, y2);
+  to_affine(xout, yout, x3, y3, z3);
   pack(q, xout);
   pack(q+66, yout);
 }
