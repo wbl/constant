@@ -1,5 +1,5 @@
-CFLAGS = -g -I/opt/local/include -O3 -Wall
-LDFLAGS=-lgmp -L/opt/local/lib
+CFLAGS = -g -I/opt/local/include -O3 -Wall -m32
+LDFLAGS=-lgmp -L/opt/local/lib -m32
 .PHONY: all
 all: p521_32_dh_test p521_32_dh_time p521_32_test_ecdsa p521_32_kat_test
 p521_32_kat_test: p521_32.o p521_32_kat_test.o
