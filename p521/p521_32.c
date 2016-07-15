@@ -707,7 +707,6 @@ add_pt_const(felem x3, felem y3, felem z3, const felem x1, const felem y1,
   sub(t14, t13, z2z2); /* t14 = t13-Z2Z2 */
   mult(z3, t14, h); /* Z3 = t14*H */
 }
-
 static void
 readd_pt_const(felem x3, felem y3, felem z3, const felem x1, const felem y1,
                const felem z1, const felem x2, const felem y2, const felem z2,
@@ -798,6 +797,7 @@ oncurve(const felem x, const felem y, const felem z)
   mult(ysqr, y, y);
   return equal(ysqr, rhs);
 }
+
 /* Scalar multiplication and associated functions*/
 static void
 recode(int out_d[105], int out_s[105], const unsigned char key[66])
@@ -903,6 +903,16 @@ scalarmult(felem x2, felem y2, felem z2, const felem px, const felem py, const u
 
 static void
 double_scalarmult(felem x3, felem y3, felem z3, const unsigned char s1[66], const felem x1, const felem y1, const unsigned char s2[66], const felem x2, const felem y2){
+  felem one={1};
+  int s1_s[105];
+  int s1_d[105];
+  int s2_s[105];
+  int s2_d[105];
+  felem table1[17][3];
+  felem table2[17][3];
+  felem yT;
+  int must_double = 0;
+  int index;
   for(int i=0; i<17; i++){
     x3[i]=0;
     y3[i]=0;
@@ -910,17 +920,51 @@ double_scalarmult(felem x3, felem y3, felem z3, const unsigned char s1[66], cons
   }
   x3[0]=1;
   y3[0]=1;
-  felem one={1};
-  for(int i=65; i>=0; i--){
-    for(int j=7; j>=0; j--){
-      double_pt(x3, y3, z3, x3, y3, z3);
-      if((s1[i]>>j)&0x1){
-        add_pt_tot(x3, y3, z3, x3, y3, z3, x1, y1, one);
-      }
-      if((s2[i]>>j)&0x1){
-        add_pt_tot(x3, y3, z3, x3, y3, z3, x2, y2, one);
-      }
+  for(int i=0; i<17; i++){
+    table1[0][0][i]=0;
+    table1[0][1][i]=0;
+    table1[0][2][i]=0;
+    table2[0][0][i]=0;
+    table2[0][1][i]=0;
+    table2[0][2][i]=0;
+    
+  }
+  mov(table1[1][0], x1);
+  mov(table1[1][1], y1);
+  mov(table1[1][2], one);
+  mov(table2[1][0], x2);
+  mov(table2[1][1], y2);
+  mov(table2[1][2], one);
+  for(int i=2; i<17; i++){
+    if(i%2==0){
+      double_pt(table1[i][0], table1[i][1], table1[i][2], table1[i/2][0], table1[i/2][1], table1[i/2][2]);
+      double_pt(table2[i][0], table2[i][1], table2[i][2], table2[i/2][0], table2[i/2][1], table2[i/2][2]);
+    }else {
+      add_pt_const(table1[i][0], table1[i][1], table1[i][2], table1[i-1][0], table1[i-1][1], table1[i-1][2],
+             x1, y1, one);
+      add_pt_const(table2[i][0], table2[i][1], table2[i][2], table2[i-1][0], table2[i-1][1], table2[i-1][2],
+             x2, y2, one);
     }
+  }
+  recode(s1_d, s1_s, s1);
+  recode(s2_d, s2_s, s2);
+  for(int i=104; i>=0; i--){
+    if(must_double){
+      double_pt(x3, y3, z3, x3, y3, z3);
+      double_pt(x3, y3, z3, x3, y3, z3);
+      double_pt(x3, y3, z3, x3, y3, z3);
+      double_pt(x3, y3, z3, x3, y3, z3);
+      double_pt(x3, y3, z3, x3, y3, z3);
+    }
+    must_double = 1;
+    index = s1_d[i];
+    mov(yT,table1[index][1]);
+    neg_cond(yT, yT, s1_s[i]);
+    add_pt_tot(x3, y3, z3, x3, y3, z3, table1[index][0], yT, table1[index][2]);
+    index = s2_d[i];
+    mov(yT,table2[index][1]);
+    neg_cond(yT, yT, s2_s[i]);
+    add_pt_tot(x3, y3, z3, x3, y3, z3, table2[index][0], yT, table2[index][2]);
   }
 }
 /* Publically visible functions */
