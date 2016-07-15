@@ -90,22 +90,6 @@ static felem base_y ={0x9fd16650,
                       0x9a3bc004,
                       0x39296a78,
                       0x118};
-/* Debugging */
-static void print_elem(char *name, const felem a){
-  printf("%s = 0 ", name);
-  for(int i=0; i<17; i++){
-    printf(" + 2**(32*%d)*%u", i, a[i]);
-  }
-  printf("\n");
-}
-
-static bool less_p(const felem b){
-  int i=16;
-  while(b[i]==prime[i]) i--;
-  if(i<0) return false;
-  return b[i]<= prime[i];
-}
-
 /* Field Arithmetic */
 
 static void reduce_add_sub(felem a){
@@ -556,95 +540,6 @@ add_pt_tot(felem x3, felem y3, felem z3, const felem x1, const felem y1,
 }
 
 static void
-readd_pt_tot(felem x3, felem y3, felem z3, const felem x1, const felem y1,
-	     const felem z1, const felem x2, const felem y2, const felem z2,
-	     const felem z2z2, const felem z2z2z2)
-{
-  /* Special cases: z1 or z2 zero=> return the other point
-     if we are doubling: use the doubling.
-     if we produce infinity: set the output correctly */
-  /* Uses add-2007-bl. Note that test z1, z2, for pt at infinity (so return
-   * other one) and H for either double or inverse (return infinity)*/
-  felem z1z1;
-  felem u1;
-  felem u2;
-  felem t1;
-  felem t2;
-  felem s1;
-  felem s2;
-  felem h;
-  felem i;
-  felem j;
-  felem t3;
-  felem r;
-  felem v;
-  felem t4;
-  felem t5;
-  felem t6;
-  felem t7;
-  felem t8;
-  felem t9;
-  felem t10;
-  felem t11;
-  felem t12;
-  felem t13;
-  felem t14;
-  if (iszero(z1)) {
-    mov(x3, x2);
-    mov(y3, y2);
-    mov(z3, z2);
-    return;
-  } else if (iszero(z2)) {
-    mov(x3, x1);
-    mov(y3, y1);
-    mov(z3, z1);
-    return;
-  }
-  mult(z1z1, z1, z1);
-  mult(u1, z2z2, x1);
-  mult(u2, z1z1, x2);
-  mult(s1, y1, z2z2z2);
-  mult(t1, z1, z1z1);
-  mult(s2, y2, t1);
-  sub(h, u2, u1);
-  if (iszero(h)) {
-    if (equal(s1, s2)) {
-      double_pt(x3, y3, z3, x1, y1, z1);
-      return;
-    } else {
-      for(int i=0; i<17; i++){
-        x3[i]=0;
-        y3[i]=0;
-	z3[i]=0;
-      }
-      x3[0]=1;
-      y3[0]=1;
-      return;
-    }
-  }
-  mul2(t2, h);
-  mult(i, t2, t2);
-  mult(j, h, i);
-  sub(t3, s2, s1);
-  mul2(r, t3);
-  mult(v, u1, i);
-  mult(t4, r, r);
-  mul2(t5, v);
-  sub(t6, t4, j);
-  sub(x3, t6, t5);
-  sub(t7, v, x3);
-  mult(t8, s1, j);
-  mul2(t9, t8);
-  mult(t10, r, t7);
-  sub(y3, t10, t9);
-  add(t11, z1, z2);
-  mult(t12, t11, t11);
-  sub(t13, t12, z1z1);
-  sub(t14, t13, z2z2);
-  mult(z3, t14, h);
-}
-
-static void
 add_pt_const(felem x3, felem y3, felem z3, const felem x1, const felem y1,
              const felem z1, const felem x2, const felem y2, const felem z2)
 {
@@ -707,66 +602,7 @@ add_pt_const(felem x3, felem y3, felem z3, const felem x1, const felem y1,
   sub(t14, t13, z2z2); /* t14 = t13-Z2Z2 */
   mult(z3, t14, h); /* Z3 = t14*H */
 }
-static void
-readd_pt_const(felem x3, felem y3, felem z3, const felem x1, const felem y1,
-               const felem z1, const felem x2, const felem y2, const felem z2,
-               const felem z2z2, const felem z2z2z2)
-{
-  /* Produces junk if used to add a point to itself or points at infinity. This
-   * is ok: we use flags and constant time moves*/
-  /* Same as above code, only removes some calculations that are passed in*/
-  felem z1z1;
-  felem u1;
-  felem u2;
-  felem t1;
-  felem t2;
-  felem s1;
-  felem s2;
-  felem h;
-  felem i;
-  felem j;
-  felem t3;
-  felem r;
-  felem v;
-  felem t4;
-  felem t5;
-  felem t6;
-  felem t7;
-  felem t8;
-  felem t9;
-  felem t10;
-  felem t11;
-  felem t12;
-  felem t13;
-  felem t14;
-  sqr(z1z1, z1);
-  mult(u1, z2z2, x1);
-  mult(u2, z1z1, x2);
-  mult(s1, y1, z2z2z2);
-  mult(t1, z1, z1z1);
-  mult(s2, y2, t1);
-  sub(h, u2, u1);
-  mul2(t2, h);
-  sqr(i, t2);
-  mult(j, h, i);
-  sub(t3, s2, s1);
-  mul2(r, t3);
-  mult(v, u1, i);
-  sqr(t4, r);
-  mul2(t5, v);
-  sub(t6, t4, j);
-  sub(x3, t6, t5);
-  sub(t7, v, x3);
-  mult(t8, s1, j);
-  mul2(t9, t8);
-  mult(t10, r, t7);
-  sub(y3, t10, t9);
-  add(t11, z1, z2);
-  sqr(t12, t11);
-  sub(t13, t12, z1z1);
-  sub(t14, t13, z2z2);
-  mult(z3, t14, h);
-}
+
 
 static void
 to_affine(felem x2, felem y2, const felem x1, const felem y1, const felem z1)
