@@ -125,22 +125,24 @@ static bool less_p(const felem b){
 }
 
 /* Field Arithmetic */
+
 static void reduce_add_sub(felem a){
-  uint64_t t;
+  uint32_t carry;
   felem d;
   uint32_t b = 0;
   uint32_t pb = 0;
   uint32_t do_sub;
   uint32_t mask_sub;
   uint32_t mask_nosub;
+  //Add one
+  carry = 1;
   for (int i = 0; i < 17; i++) {
-    t = (uint64_t)prime[i] + pb;
-    b = a[i] < t;
-    t = a[i] - t + ((uint64_t)b << 32);
-    d[i] = (uint32_t)t & mask_lo;
-    pb = b;
+    d[i] = a[i]+carry;
+    carry = d[i]<a[i];
   }
-  do_sub = 1 - pb;
+  assert(carry==0);
+  do_sub = (d[16] & 0x200)>>9; //if x<p, x+1<2^521
+  d[16] = d[16]&0x1ff;
   mask_sub = (uint32_t)-do_sub;
   mask_nosub = ~mask_sub;
   for(int i=0; i<17; i++){
