@@ -35,24 +35,6 @@ static felem prime = {0xffffffff,
                       0xffffffff,
                       0x1ff};
 
-static felem primes2 = {0xfffffffd,
-                        0xffffffff,
-                        0xffffffff,
-                        0xffffffff,
-                        0xffffffff,
-                        0xffffffff,
-                        0xffffffff,
-                        0xffffffff,
-                        0xffffffff,
-                        0xffffffff,
-                        0xffffffff,
-                        0xffffffff,
-                        0xffffffff,
-                        0xffffffff,
-                        0xffffffff,
-                        0xffffffff,
-                        0x1ff};
-
 static uint64_t mask_lo = 0x00000000ffffffff;
 
 static felem curveb={0x6b503f00,
@@ -314,36 +296,66 @@ mov(felem r, const felem a)
   }
 }
 
-
 static void
 inv(felem r, const felem a)
-{ /* Cannot be in place */
-  for (int i = 0; i < 17; i++) {
-    r[i] = 0;
+{
+  felem a2, a3, a6, a7, a8, a16, a32, a64, a128, a256, a512, a519, t;
+  sqr(t, a);
+  mult(a2, t, a);
+  mov(t, a2);
+  sqr(t,t);
+  mult(a3, t, a);
+  mov(t, a3);
+  for(int i=0; i<3; i++){
+    sqr(t, t);
   }
-  r[0]=1;
-  felem table[16];
-  mov(table[0], r);
-  mov(table[1], a);
-  for(int i=2; i<16; i++){
-    mult(table[i], table[i-1], a);
+  mult(a6, t, a3);
+  sqr(t, a6);
+  mult(a7, t, a);
+  sqr(t, a7);
+  mult(a8, t, a);
+  mov(t, a8);
+  for(int i=0; i<8; i++){
+    sqr(t, t);
   }
-  int first = 1;
-  for (int i = 16; i >= 0; i--) { /* start at the high value bit*/
-    for (int j = 28; j >= 0; j-=4) {
-      if(!first){
-      mult(r, r, r);
-      mult(r, r, r);
-      mult(r, r, r);
-      mult(r, r, r);
-      }
-      first = 0;
-      if ((primes2[i] >> j) & 0xf) {
-        mult(r, r, table[(primes2[i] >> j)&0xf]);
-      }
-    }
+  mult(a16, t, a8);
+  mov(t, a16);
+  for(int i=0; i<16; i++){
+    sqr(t, t);
   }
+  mult(a32, t, a16);
+  mov(t, a32);
+  for(int i=0; i<32; i++){
+    sqr(t, t);
+  }
+  mult(a64, t, a32);
+  mov(t, a64);
+  for(int i=0; i<64; i++){
+    sqr(t, t);
+  }
+  mult(a128, t, a64);
+  mov(t, a128);
+  for(int i=0; i<128; i++){
+    sqr(t, t);
+  }
+  mult(a256, t, a128);
+  mov(t, a256);
+  for(int i=0; i<256; i++){
+    sqr(t, t);
+  }
+  mult(a512, t, a256);
+  mov(t, a512);
+  for(int i=0; i<7; i++){
+    sqr(t, t);
+  }
+  mult(a519, t, a7);
+  mov(t, a519);
+  for(int i=0; i<2; i++){
+    sqr(t, t);
+  }
+  mult(r, t, a);
 }
+
 
 /* I/O */
 static void
