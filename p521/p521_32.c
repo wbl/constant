@@ -148,9 +148,28 @@ static void reduce_add_sub(felem a){
   }
 }
 
+static void neg_cond(felem r, const felem a, uint32_t cond){
+  uint64_t t;
+  felem d;
+  uint32_t b =0;
+  uint32_t pb = 0;
+  uint32_t mask_cond;
+  uint32_t mask_nocond;
+  for(int i=0; i<17; i++){
+    t = (uint64_t) prime[i];
+    b = t < (uint64_t) a[i]+pb;
+    t = t - a[i]+((uint64_t)b <<32);
+    d[i] = (uint32_t) t & mask_lo;
+    pb = b;
+  }
+  mask_cond = (uint32_t) -cond;
+  mask_nocond = ~mask_cond;
+  for(int i=0; i<17; i++){
+    r[i] = (mask_cond &d[i]) | (mask_nocond & a[i]);
+  }
+}
+
 static void add(felem r, const felem a, const felem b){
-  assert(less_p(a));
-  assert(less_p(b));
   uint32_t carry = 0;
   uint64_t t;
   for (int i = 0; i < 17; i++) {
@@ -158,7 +177,6 @@ static void add(felem r, const felem a, const felem b){
     r[i] = (uint32_t)(t & mask_lo);
     carry = t >> 32;
   }
-  assert(carry==0);
   reduce_add_sub(r);
 }
 
@@ -166,8 +184,6 @@ static void add(felem r, const felem a, const felem b){
 static void
 sub(felem r, const felem a, const felem b)
 { /* Will need testing*/
-    assert(less_p(a));
-    assert(less_p(b));
   uint32_t carry = 0;
   uint64_t t = 0;
   uint32_t brw = 0;
@@ -181,8 +197,6 @@ sub(felem r, const felem a, const felem b)
     carry = t >> 32;
     pbrw = brw;
   }
-  assert(carry==0);
-  assert(pbrw == 0);
   reduce_add_sub(r);
 }
 
@@ -198,14 +212,11 @@ mulred(felem r, const uint32_t t[33]){ /* This is the correct size, even if mult
     b[i] = (t[16+i]>>9) | (t[17+i] & 0x1ff) << 23;
   }
   b[16] = t[32]>>9;
-  assert(b[16]<=0x1ff);
   add(r, a, b);
 }
 
 static void
 mul_nored(uint32_t prod[34], const felem a, const felem b){
-  assert(less_p(a));
-  assert(less_p(b));
   uint64_t t;
   uint32_t carry;
   for (int i = 0; i < 34; i++) {
@@ -220,7 +231,6 @@ mul_nored(uint32_t prod[34], const felem a, const felem b){
     }
     prod[17 + i] = carry;
   }
-  assert(prod[33]==0);
 }
 
 static void
@@ -775,14 +785,51 @@ oncurve(const felem x, const felem y, const felem z)
   return equal(ysqr, rhs);
 }
 /* Scalar multiplication and associated functions*/
-
+static void
+recode(int out_d[105], int out_s[105], const unsigned char key[66])
+{
+  /* We use a signed representation where digits are -15, -14,... 16 */
+  /* Below encodes it in constant time by subtracting 32 if the 5 bit value is
+   too large.*/
+  int word = 0;
+  int bits = 0;
+  int carry = 0;
+  int sub = 0;
+  int bit = 0;
+  int k = 0;
+  /* Note that we have an almost extra byte to handle, containing only 1 bit, right after a word boundary */
+  for (int i = 0; i < 65; i++) {
+    for (int j = 0; j < 8; j++) {
+      bit = ((key[i] >> j) & 0x1);
+      word |= (bit << bits);
+      bits++;
+      if (bits == 5) {
+        word = word + carry;
+        sub = word > 16;
+        word = (1 - sub) * word + sub * (32 - word);
+        carry = sub;
+        out_d[k] = word;
+        out_s[k] = sub;
+	assert(word<=16);
+        k++;
+        word = 0;
+        bits = 0;
+      }
+    }
+  }
+  word = key[65] + carry;
+  out_d[104] = word;
+  out_s[104] = 0;
+}
 /*Scalar is little endian*/
 static void
 scalarmult(felem x2, felem y2, felem z2, const felem px, const felem py, const unsigned char scalar[66]){
   //Double and add for now
+  int s_d[105];
+  int s_s[105];
   felem xT, yT, zT;
   felem xR, yR, zR;
-  felem table[16][3];
+  felem table[17][3];
   felem one={1};
   for(int i=0; i<17; i++){
     table[0][0][i]=0;
@@ -799,7 +846,7 @@ scalarmult(felem x2, felem y2, felem z2, const felem px, const felem py, const u
   mov(table[1][0], px);
   mov(table[1][1], py);
   mov(table[1][2], one);
-  for(int i=2; i<16; i++){
+  for(int i=2; i<17; i++){
     if(i%2==0){
       double_pt(table[i][0], table[i][1], table[i][2], table[i/2][0], table[i/2][1], table[i/2][2]);
     }else {
@@ -807,35 +854,36 @@ scalarmult(felem x2, felem y2, felem z2, const felem px, const felem py, const u
              px, py, one);
     }
   }
+  recode(s_d, s_s, scalar);
   int seen = 0;
   int must_double = 0;
   int index;
   int valid_entry;
-  for(int i=65; i>=0; i--){
-    for(int j=4; j>=0; j-=4){
-      if(must_double){
-        double_pt(x2, y2, z2, x2, y2, z2); 
-        double_pt(x2, y2, z2, x2, y2, z2); 
-        double_pt(x2, y2, z2, x2, y2, z2);
-        double_pt(x2, y2, z2, x2, y2, z2);
-      }
-      must_double = 1;
-      index = (scalar[i]>>j)&0xf;
-      for(int k=0; k<16; k++){
-        cmov(xT, table[k][0], k==index);
-        cmov(yT, table[k][1], k==index);
-        cmov(zT, table[k][2], k==index);
-      }
-      valid_entry = (index!=0);
-      add_pt_const(xR, yR, zR, x2, y2, z2, xT, yT, zT);
-      cmov(xR, xT, !seen);
-      cmov(yR, yT, !seen);
-      cmov(zR, zT, !seen);
-      cmov(x2, xR, valid_entry);
-      cmov(y2, yR, valid_entry);
-      cmov(z2, zR, valid_entry);
-      seen |= valid_entry;
+  for(int i=104; i>=0; i--){
+    if(must_double){
+      double_pt(x2, y2, z2, x2, y2, z2); 
+      double_pt(x2, y2, z2, x2, y2, z2); 
+      double_pt(x2, y2, z2, x2, y2, z2);
+      double_pt(x2, y2, z2, x2, y2, z2);
+      double_pt(x2, y2, z2, x2, y2, z2);
     }
+    must_double = 1;
+    index = s_d[i];
+    for(int k=0; k<17; k++){
+      cmov(xT, table[k][0], k==index);
+      cmov(yT, table[k][1], k==index);
+      cmov(zT, table[k][2], k==index);
+      }
+    valid_entry = (index!=0);
+    neg_cond(zT, zT, s_s[i]);
+    add_pt_const(xR, yR, zR, x2, y2, z2, xT, yT, zT);
+    cmov(xR, xT, !seen);
+    cmov(yR, yT, !seen);
+    cmov(zR, zT, !seen);
+    cmov(x2, xR, valid_entry);
+    cmov(y2, yR, valid_entry);
+    cmov(z2, zR, valid_entry);
+    seen |= valid_entry;
   }
 }
 
