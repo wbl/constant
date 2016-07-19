@@ -20,7 +20,10 @@
  * Otherwise based on Emilia's P224 work, which was inspired by my curve25519
  * work which got its smarts from Daniel J. Bernstein's work on the same.
  */
-
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+#include "p521_64.h"
 /* even with gcc, the typedef won't work for 32-bit platforms */
 typedef __uint128_t
   uint128_t; /* nonstandard; implemented by gcc on 64-bit platforms */
@@ -99,7 +102,7 @@ load(const u8* where)
 {
   limb t = 0;
   int i = 0;
-  for (i = 8; i >= 0; i--) {
+  for (i = 7; i >= 0; i--) {
     t <<= 8;
     t |= where[i];
   }
@@ -107,12 +110,12 @@ load(const u8* where)
 }
 
 static void
-orin(const u8* where, const limb what)
+orin(u8* where, const limb what)
 {
   limb t = load(where);
   t |= what;
   for (int i = 0; i < 8; i++) {
-    what[i] = t & 0xff;
+    where[i] = t & 0xff;
     t >>= 8;
   }
 }
@@ -148,7 +151,6 @@ static void felem_to_bin66(u8 out[66], const felem in) /* XXX */
   orin(out+58, in[8]);
 }
 
-/* To preserve endianness when eating points */
 static void
 flip_endian(u8* out, const u8* in, unsigned len)
 {
@@ -156,6 +158,8 @@ flip_endian(u8* out, const u8* in, unsigned len)
   for (i = 0; i < len; ++i)
     out[i] = in[len - 1 - i];
 }
+
+/* To preserve endianness when eating points */
 
 /* Field operations
  * ---------------- */
@@ -1360,5 +1364,115 @@ get_bit(const felem_bytearray in, int i)
 }
 
 /* Now to implement our desired functions */
+static void to_affine(felem x2, felem y2, const felem x1, const felem y1, const felem z1){
+  felem zinv;
+  felem zinvsqr;
+  felem zinvcube;
+  felem_inv(zinv, z1);
+  felem_square_reduce(zinvsqr, zinv);
+  felem_mul_reduce(zinvcube, zinv, zinvsqr);
+  felem_mul_reduce(x2, x1, zinvsqr);
+  felem_mul_reduce(y2, y1, zinvcube);
+}
 
-/*Start with basic double and add*/
+static void scalarmult(felem x2, felem y2, const unsigned char scalar[66], const felem x1, const felem y1){
+  felem z2 = {0};
+  felem tmp[3];
+  felem table[2][3];
+  limb idx;
+  memset(table, 0, sizeof(table));
+  felem_one(x2);
+  felem_one(y2);
+  felem_one(table[0][0]);
+  felem_one(table[0][1]);
+  felem_assign(table[1][0], x1);
+  felem_assign(table[1][1], y1);
+  felem_one(table[1][2]);
+  for(int i=520; i>=0; i--){
+    idx = get_bit(scalar, i);
+    point_double(x2, y2, z2, x2, y2, z2);
+    select_point(idx, 2, table, tmp);
+    point_add(x2, y2, z2, x2, y2, z2, 1, tmp[0], tmp[1], tmp[2]);
+  }
+  to_affine(x2, y2, x2, y2, z2);
+}
+
+static void scalarmult_double(felem x3, felem y3, const unsigned char s1[66], const felem x1, const felem y1, const unsigned char s2[66], const felem x2, const felem y2){
+  felem z3 = {0};
+  felem tmp[3];
+  felem table1[2][3];
+  felem table2[2][3];
+  limb idx;
+  felem_one(x3);
+  felem_one(y3);
+  memset(table1, 0, sizeof(table1));
+  memset(table2, 0, sizeof(table2));
+  felem_one(table1[0][0]);
+  felem_one(table1[0][1]);
+  felem_assign(table1[1][0], x1);
+  felem_assign(table1[1][1], y1);
+  felem_one(table1[1][2]);
+  felem_one(table2[0][0]);
+  felem_one(table2[0][1]);
+  felem_assign(table2[1][0], x2);
+  felem_assign(table2[1][1], y2);
+  felem_one(table2[1][2]);
+  for(int i=520; i>=0; i--){
+    idx = get_bit(s1, i);
+    point_double(x3, y3, z3, x3, y3, z3);
+    select_point(idx, 2, table1, tmp);
+    point_add(x3, y3, z3, x3, y3, z3, 1, tmp[0], tmp[1], tmp[2]);
+    idx = get_bit(s2, i);
+    select_point(idx, 2, table2, tmp);
+    point_add(x3, y3, z3, x3, y3, z3, 1, tmp[0], tmp[1], tmp[2]);
+  }
+  to_affine(x3, y3, x3, y3, z3);
+}
+static void load_coord(felem val, const u8 in[66]){
+  u8 tmp[66];
+  flip_endian(tmp, in, 66);
+  bin66_to_felem(val, tmp);
+}
+
+static void dump_coord(u8 out[66], const felem v){
+  u8 tmp[66];
+  felem val;
+  felem_contract(val, v);
+  felem_to_bin66(tmp, val);
+  flip_endian(out, tmp, 66);
+}
+
+void
+p521_64_scalarmult(unsigned char q[132], const unsigned char scalar[66], const unsigned char p[132]){
+  felem xin, yin, xout, yout;
+  load_coord(xin, p);
+  load_coord(yin, p+66);
+  scalarmult(xout, yout, scalar, xin, yin);
+  dump_coord(q, xout);
+  dump_coord(q+66, yout);
+}
+
+void
+p521_64_scalarmult_base(unsigned char q[132], const unsigned char scalar[66]){
+  felem xin, yin, xout, yout;
+  load_coord(xin, nistp521_curve_params[3]);
+  load_coord(yin, nistp521_curve_params[4]);
+  scalarmult(xout, yout, scalar, xin, yin);
+  dump_coord(q, xout);
+  dump_coord(q+66, yout);
+}
+
+void
+p521_64_double_scalarmult_base(unsigned char q[132], const unsigned char a[132],
+                                    const unsigned char n1[66],
+                                    const unsigned char n2[66]){
+  
+  felem x1, y1, x2, y2, xout, yout;
+  load_coord(x1, nistp521_curve_params[3]);
+  load_coord(y1, nistp521_curve_params[4]);
+  load_coord(x2, a);
+  load_coord(y2, a+66);
+  scalarmult_double(xout, yout, n1, x1, y1, n2, x2, y2);
+  dump_coord(q, xout);
+  dump_coord(q+66, yout);
+}
