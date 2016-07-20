@@ -1375,24 +1375,88 @@ static void to_affine(felem x2, felem y2, const felem x1, const felem y1, const 
   felem_mul_reduce(y2, y1, zinvcube);
 }
 
+static void
+recode(int out_d[105], int out_s[105], const unsigned char key[66])
+{
+  /* We use a signed representation where digits are -15, -14,... 16 */
+  /* Below encodes it in constant time by subtracting 32 if the 5 bit value is
+   too large.*/
+  int word = 0;
+  int bits = 0;
+  int carry = 0;
+  int sub = 0;
+  int bit = 0;
+  int k = 0;
+  /* Note that we have an almost extra byte to handle, containing only 1 bit, right after a word boundary */
+  for (int i = 0; i < 65; i++) {
+    for (int j = 0; j < 8; j++) {
+      bit = ((key[i] >> j) & 0x1);
+      word |= (bit << bits);
+      bits++;
+      if (bits == 5) {
+        word = word + carry;
+        sub = word > 16;
+        word = (1 - sub) * word + sub * (32 - word);
+        carry = sub;
+        out_d[k] = word;
+        out_s[k] = sub;
+        k++;
+        word = 0;
+        bits = 0;
+      }
+    }
+  }
+  word = key[65] + carry;
+  out_d[104] = word;
+  out_s[104] = 0;
+}
+
+static limb condmask(int cond){
+  limb ret = 1-cond; //0 or 1
+  ret--;
+  return ret;
+}
+  
 static void scalarmult(felem x2, felem y2, const unsigned char scalar[66], const felem x1, const felem y1){
   felem z2 = {0};
   felem tmp[3];
-  felem table[2][3];
-  limb idx;
+  felem negY;
+  felem table[17][3];
+  int scalar_s[105];
+  int scalar_d[105];
+  int must_double=0;
+  int i;
   memset(table, 0, sizeof(table));
   felem_one(x2);
   felem_one(y2);
+  felem_one(negY);
   felem_one(table[0][0]);
   felem_one(table[0][1]);
   felem_assign(table[1][0], x1);
   felem_assign(table[1][1], y1);
   felem_one(table[1][2]);
-  for(int i=520; i>=0; i--){
-    idx = get_bit(scalar, i);
-    point_double(x2, y2, z2, x2, y2, z2);
-    select_point(idx, 2, table, tmp);
-    point_add(x2, y2, z2, x2, y2, z2, 1, tmp[0], tmp[1], tmp[2]);
+  recode(scalar_d, scalar_s, scalar);
+  for(int i=0; i<17; i++){
+    if(i%2==0){
+      point_double(table[i][0], table[i][1], table[i][2], table[i/2][0], table[i/2][1], table[i/2][2]);
+    }else {
+      point_add(table[i][0], table[i][1], table[i][2], table[i-1][0], table[i-1][1], table[i-1][2], 1,
+             x1, y1, negY);
+    }
+  }
+  for(i=104; i>=0; i--){
+    if (must_double) {
+      point_double(x2, y2, z2, x2, y2, z2);
+      point_double(x2, y2, z2, x2, y2, z2);
+      point_double(x2, y2, z2, x2, y2, z2);
+      point_double(x2, y2, z2, x2, y2, z2);
+      point_double(x2, y2, z2, x2, y2, z2);
+    }
+    must_double = 1;
+    select_point(scalar_d[i], 17, table, tmp);
+    felem_neg(negY, tmp[1]);
+    copy_conditional(tmp[1], negY, condmask(scalar_s[i]));
+    point_add(x2, y2, z2, x2, y2, z2, 0, tmp[0], tmp[1], tmp[2]);
   }
   to_affine(x2, y2, x2, y2, z2);
 }
