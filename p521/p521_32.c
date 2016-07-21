@@ -95,8 +95,6 @@ static felem base_y ={0x9fd16650,
 static void reduce_add_sub(felem a){
   uint32_t carry;
   felem d;
-  uint32_t b = 0;
-  uint32_t pb = 0;
   uint32_t do_sub;
   uint32_t mask_sub;
   uint32_t mask_nosub;
@@ -106,9 +104,8 @@ static void reduce_add_sub(felem a){
     d[i] = a[i]+carry;
     carry = d[i]<a[i];
   }
-  assert(carry==0);
   do_sub = (d[16] & 0x200)>>9; //if x<p, x+1<2^521
-  d[16] = d[16]&0x1ff;
+  d[16] = d[16]&0x1ff; //Subtract 2^521
   mask_sub = (uint32_t)-do_sub;
   mask_nosub = ~mask_sub;
   for(int i=0; i<17; i++){
@@ -117,19 +114,13 @@ static void reduce_add_sub(felem a){
 }
 
 static void neg_cond(felem r, const felem a, uint32_t cond){
-  uint64_t t;
   felem d;
-  uint32_t b =0;
-  uint32_t pb = 0;
   uint32_t mask_cond;
   uint32_t mask_nocond;
   for(int i=0; i<17; i++){
-    t = (uint64_t) prime[i];
-    b = t < (uint64_t) a[i]+pb;
-    t = t - a[i]+((uint64_t)b <<32);
-    d[i] = (uint32_t) t & mask_lo;
-    pb = b;
+    d[i] = prime[i]-a[i];
   }
+  reduce_add_sub(d);
   mask_cond = (uint32_t) -cond;
   mask_nocond = ~mask_cond;
   for(int i=0; i<17; i++){
@@ -154,16 +145,11 @@ sub(felem r, const felem a, const felem b)
 { /* Will need testing*/
   uint32_t carry = 0;
   uint64_t t = 0;
-  uint32_t brw = 0;
-  uint32_t pbrw = 0;
-  for (int i = 0; i < 17; i++) { /* Assembler would be great for this.*/
-    t = (uint64_t)prime[i] + a[i] + carry;
-    brw = t < ((uint64_t)b[i]) + pbrw;
-    t += ((uint64_t)brw) << 32;
-    t -= (uint64_t)b[i] + (uint64_t)pbrw;
+  for (int i = 0; i < 17; i++) {
+    t = (uint64_t)prime[i] - b[i]; //This cannot underflow: all words of prime are bigger then b.
+    t += (uint64_t)a[i]+carry;
     r[i] = (uint32_t)(t & mask_lo);
     carry = t >> 32;
-    pbrw = brw;
   }
   reduce_add_sub(r);
 }
