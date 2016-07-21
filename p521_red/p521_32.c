@@ -17,7 +17,7 @@
 typedef uint32_t felem[19];
 
 static const felem prime = {0xfffffff,
-                            0xfffffff
+                            0xfffffff,
                             0xfffffff,
                             0xfffffff,
                             0xfffffff,
@@ -77,15 +77,15 @@ static const felem base_y ={0xfd16650,
                             0x11839};
 
 static const uint32_t bottom28 = 0x0fffffff;
-static const uint32_t topmask = 1<<17-1;
+static const uint32_t topmask = (1<<17)-1;
 /* Field Arithmetic */
 static void
 reduce_carry(felem a){
   /* Preconditions: a[i]<2^28, a[18]<2^28*/
-  /* Postconditions a%p unchanged, a[i]<2^29, a<2p */
+  /* Postconditions a%p unchanged, a[i]<2^29, a<p+1 */
   uint32_t carry = a[18] >> 17;
   a[18] &= topmask;
-  a[0] += 2*carry; //2^522=2 mod p
+  a[0] += carry; //2^521=2 mod p
 }
 
 static void
@@ -102,7 +102,26 @@ carry_prop(felem a){ /* moves carries down, lets a[18] grow */
 }
 
 static void
-add(felem r, felem a, felem b){ /*Precondition: a[i] and b[i] <2^r, r<30*/
+reduce_total(felem a){
+  felem d;
+  uint32_t mask;
+  carry_prop(a); //shrink limbs
+  reduce_carry(a); //a<p+1
+  for(int i=0; i<19; i++){
+    d[i]=a[i];
+  }
+  d[0]+=1; //add 1
+  carry_prop(d); //propagate
+  mask = d[18]>>17; //we've now subtracted p, and mask tells us if we need to
+  d[18] &= topmask;
+  mask = -mask;
+  for(int i=0; i<19; i++){
+    a[i] ^=(a[i]^d[i])&mask; //conditional swap
+  }
+}
+
+static void
+add(felem r, const felem a, const felem b){ /*Precondition: a[i] and b[i] <2^r, r<30*/
   /*Postcondition: r[i] < 2^(r+1) */
   /* In practice result will need to be 29 bits, and so input 28 bits */
   for(int i=0; i<19; i++){
@@ -111,16 +130,18 @@ add(felem r, felem a, felem b){ /*Precondition: a[i] and b[i] <2^r, r<30*/
 }
 
 static void
-sub(felem r, felem a, felem b){
-/* Preconditions: each element of b[i]<2^28, b < 2*p, a[i]<2^29 */
+sub(felem r, const felem a, const felem b){
+/* Preconditions: each element of b[i]<2^28, b < 4*p, a[i]<2^29 */
 /* Postconditions: r[i]<2^29, r<2p*/
-  r[i]=a[i]+(2*prime[i]-b[i]);
+  for(int i=0; i<19; i++){
+    r[i]=a[i]+(4*prime[i]-b[i]);
+  }
   carry_prop(r);
   reduce_carry(r);
 }
 
 static void
-mult_nored(uint64_t r[38], felem a, felem b){
+mult_nored(uint64_t r[38], const felem a, const felem b){
   /* Precondition: a[i]<2^29, b[i]<2^29 */
   /* Postcondition r[i]<19*2^58<2^63*/
   for(int i=0; i<38; i++){
@@ -146,6 +167,7 @@ carry_prop_prod(uint64_t prod[38], int len){
 
 static void
 multred(felem r, uint64_t prod[38]){
+  // r will be less then p, and have r[i]<2^28
   carry_prop_prod(prod, 37);
   //All prod[i] are now < 2^28, except prod[37] which is at most 2^(63-28) = 2^(35). prod[37] should fit at 2^515, which is 2^11*2^(18*28). So prod[18] has a 2^46 element added to it,
   // and all others are <2^39
@@ -157,10 +179,181 @@ multred(felem r, uint64_t prod[38]){
   for(int i=0; i<19; i++){
     r[i] = prod[i];
   }
-  carry_prop(r[i]);
-  reduce_carry(r[i]);
-  carry_prop(r[i]);
-  reduce_carry(r[i]); //XXX argue this enough to make add safe, or not.
+  carry_prop(r);
+  reduce_carry(r);
+  carry_prop(r);
+  reduce_carry(r); //XXX argue this enough to make add safe, or not.
+}
+
+static void
+mult(felem r, const felem a, const felem b){
+  uint64_t prod[38];
+  mult_nored(prod, a, b);
+  multred(r, prod);
+}
+
+static void
+mul2(felem r, const felem a){
+  carry_prop(a);
+  add(r, a, a);
+}
+
+static void
+mul3(felem r, const felem a){
+  carry_prop(a);
+  for(int i=0; i<9; i++){
+    r[i]=3*a[i];
+  }
+  carry_prop(r);
+}
+
+static void
+mul4(felem r, const felem a){
+  carry_prop(a);
+  for(int i=0; i<9; i++){
+    r[i]=4*a[i];
+  }
+  carry_prop(r);
+}
+
+static void
+mul8(felem r, const felem a){
+  carry_prop(a);
+  for(int i=0; i<9; i++){
+    r[i]=8*a[i];
+  }
+  carry_prop(r);
+}
+
+static void
+sqr(felem r, const felem a){
+  uint64_t prod[38];
+  mult_nored(prod, a, a);
+  multred(r, prod);
+}
+
+static void
+mov(felem dst, const felem src){
+  for(int i=0; i<19; i++){
+    dst[i] = src[i];
+  }
+}
+
+static void
+cmov(felem r, const felem a, int cond){
+  uint32_t mask = -cond;
+  for(int i=0; i<9; i++){
+    r[i] ^=(r[i]^a[i])&mask;
+  }
+}
+
+static void
+neg_cond(felem r, const felem a, int cond){
+  //pre and post conditions same for sub
+  felem zero = {0};
+  sub(r, zero, a);
+  cmov(r, a, 1-cond);
+}
+
+static void
+pack(unsigned char s[66], const felem a){
+  unsigned char t[66];
+  for(int i=0; i<9; i++){
+    t[7*i] = a[2*i];
+    t[7*i+1] = a[2*i]>>8;
+    t[7*i+2] = a[2*i]>>16;
+    t[7*i+3] = a[2*i] >>24;
+    t[7*i+3] |= (a[2*i+1] &0xf) <<4;
+    t[7*i+4] = a[2*i+1] >>4;
+    t[7*i+5] = a[2*i+1] >>12;
+    t[7*i+6] = a[2*i+1] >>20;
+  }
+  t[63] = a[18];
+  t[64] = a[18]>>8;
+  t[65] = a[18]>>16;
+  for(int i=0; i<66; i++){
+    s[i]=t[65-i];
+  }
+}
+
+static void
+unpack(felem a, const unsigned char s[66]){
+  unsigned char t[66];
+  for(int i=0; i<66; i++){
+    t[i]=s[65-i];
+  }
+  for(int i=0; i<9; i++){
+    a[2*i] = (uint32_t) t[7*i]
+    | (t[7*i+1] << 8)
+    | (t[7*i+2] << 16)
+    | (t[7*i+3] << 24);
+    a[2*i+1] = (uint32_t) t[7*i+3]
+    | (t[7*i+4] << 8)
+    | (t[7*i+5] << 16)
+    | (t[7*i+6] << 24);
+    a[2*i+1] >>= 4;
+  }
+  a[18] = t[63] | (t[64] <<8) | (t[65]<<16);  
+}
+
+static void
+inv(felem r, const felem a)
+{
+  felem a2, a3, a6, a7, a8, a16, a32, a64, a128, a256, a512, a519, t;
+  sqr(t, a);
+  mult(a2, t, a);
+  mov(t, a2);
+  sqr(t,t);
+  mult(a3, t, a);
+  mov(t, a3);
+  for(int i=0; i<3; i++){
+    sqr(t, t);
+  }
+  mult(a6, t, a3);
+  sqr(t, a6);
+  mult(a7, t, a);
+  sqr(t, a7);
+  mult(a8, t, a);
+  mov(t, a8);
+  for(int i=0; i<8; i++){
+    sqr(t, t);
+  }
+  mult(a16, t, a8);
+  mov(t, a16);
+  for(int i=0; i<16; i++){
+    sqr(t, t);
+  }
+  mult(a32, t, a16);
+  mov(t, a32);
+  for(int i=0; i<32; i++){
+    sqr(t, t);
+  }
+  mult(a64, t, a32);
+  mov(t, a64);
+  for(int i=0; i<64; i++){
+    sqr(t, t);
+  }
+  mult(a128, t, a64);
+  mov(t, a128);
+  for(int i=0; i<128; i++){
+    sqr(t, t);
+  }
+  mult(a256, t, a128);
+  mov(t, a256);
+  for(int i=0; i<256; i++){
+    sqr(t, t);
+  }
+  mult(a512, t, a256);
+  mov(t, a512);
+  for(int i=0; i<7; i++){
+    sqr(t, t);
+  }
+  mult(a519, t, a7);
+  mov(t, a519);
+  for(int i=0; i<2; i++){
+    sqr(t, t);
+  }
+  mult(r, t, a);
 }
 
 static void
@@ -378,26 +571,8 @@ to_affine(felem x2, felem y2, const felem x1, const felem y1, const felem z1)
   mult(x2, x1, zrzr);
   mult(zr, zrzr, zr);
   mult(y2, y1, zr);
-  canonicalize(x2);
-  canonicalize(y2);
-}
-
-static bool
-oncurve(const felem x, const felem y, const felem z)
-{
-  felem z2, z4, z6, t0, t1, t2, t3, t4, t5, ysqr, rhs;
-  mult(z2, z, z);
-  mult(z4, z2, z2);
-  mult(z6, z4, z2);
-  mult(t0, curveb, z6);
-  mult(t1, x, z4);
-  mul3(t2, t1);
-  mult(t3, x, x);
-  mult(t4, t3, x);
-  sub(t5, t4, t2);
-  add(rhs, t5, t0);
-  mult(ysqr, y, y);
-  return equal(ysqr, rhs);
+  reduce_total(x2);
+  reduce_total(y2);
 }
 
 /* Scalar multiplication and associated functions*/
@@ -613,12 +788,3 @@ p521_32_double_scalarmult_base(unsigned char *q, const unsigned char a[132], con
   pack(q+66, yout);
 }
 
-bool
-p521_32_valid(const unsigned char p[132]){
-  felem x;
-  felem y;
-  felem one={1};
-  unpack(x, p);
-  unpack(y, p+66);
-  return oncurve(x, y, one);
-}
