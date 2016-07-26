@@ -5,9 +5,9 @@
 
 #need to print constants as arrays of 32 bit ints
 
-radix = 2**32
+radix = 2**64
 def print32(x):
-    for i in range(0, 12):
+    for i in range(0, 6):
         print "0x%x,"%(x % radix)
         x = x/radix
 
