@@ -1,13 +1,14 @@
-CFLAGS=-g -I/opt/local/include -O3 -m32
+CFLAGS=-g -I/opt/local/include -O3
 CC=clang-mp-3.9
-LDFLAGS=-lgmp -L/opt/local/lib -m32
+LDFLAGS=-lgmp -L/opt/local/lib
 .PHONY: all
 .PHONY: clean
-all: p384_32_test p384_32_time p384_32_time_double p384_32_test_ecdsa
+all: p384_32_test p384_32_time p384_32_time_double p384_32_test_ecdsa p384_32_secgrind
 p384_32_test: p384_32_test.o p384_32.o
 p384_32_time: p384_32_time.o p384_32.o
 p384_32_time_double: p384_32_time_double.o p384_32.o
 p384_32_test_ecdsa: p384_32_test_ecdsa.o p384_32.o
+p384_32_secgrind: p384_32_secgrind.o p384_32.o
 clean:
 	rm -f *.o
 	rm p384_32_test p384_32_time p384_32_time_double p384_32_test_ecdsa

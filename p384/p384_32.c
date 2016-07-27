@@ -8,7 +8,6 @@
  * Can replace with assembler intrinsics. Heck, can do the   *
  * whole thing with assembler */
 
-#include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -878,7 +877,6 @@ recode(int out_d[77], int out_s[77], const unsigned char key[48])
         carry = sub;
         out_d[k] = word;
         out_s[k] = sub;
-	assert(word<=16);
         k++;
         word = 0;
         bits = 0;
@@ -1052,7 +1050,6 @@ scalarmult_double(felem x, felem y, const felem x1, const felem y1, const unsign
       readd_pt_tot(xQ, yQ, zQ, xQ, yQ, zQ, table2[r_d2[i]][0], yT, table2[r_d2[i]][2], table2[r_d2[i]][3], table2[r_d2[i]][4]);
     }
     first = 0;
-    assert(oncurve(xQ, yQ, zQ, false));
   }
   to_affine(x, y, xQ, yQ, zQ);
   from_mont(x, x);
@@ -1082,14 +1079,9 @@ p384_32_scalarmult(unsigned char q[96], const unsigned char n[48],
   unpack(x, p);
   unpack(y, p + 48);
   felem one = { 1 };
-  if (!oncurve(x, y, one, true)) {
-    printf("Invalid point used\n");
-    p384_32_scalarmult_base(q, n);
-  } else {
-    scalarmult(x_t, y_t, x, y, n);
-    pack(q, x_t);
-    pack(q + 48, y_t);
-  }
+  scalarmult(x_t, y_t, x, y, n);
+  pack(q, x_t);
+  pack(q + 48, y_t);
 }
 
 void
@@ -1100,9 +1092,6 @@ p384_32_scalarmult_base(unsigned char q[96], const unsigned char n[48])
   scalarmult(x, y, base_x, base_y, n);
   pack(q, x);
   pack(q + 48, y);
-  if(!p384_32_valid(q)){
-    printf("base produced wrong result!\n");
-  }
 }
 
 void
