@@ -1,5 +1,10 @@
 /* Use saturated 64 bit arithmetic and Montgomery reduction. */
-
+#include<assert.h>
+#include<stdint.h>
+#include<inttypes.h>
+#include<stdbool.h>
+#include<stdio.h>
+#include "p384_64.h"
 /* Constants */
 typedef uint64_t felem[6];
 typedef __uint128_t uint128_t;
@@ -10,6 +15,12 @@ static const felem Rsqr = {0xfffffffe00000001,
                            0x200000000,
                            0x1,
                            0x0};
+static const felem R = {0xffffffff00000001,
+                        0xffffffff,
+                        0x1,
+                        0x0,
+                        0x0,
+                        0x0};
 
 static const felem prime = {0xffffffff,
                             0xffffffff00000000,
@@ -17,6 +28,13 @@ static const felem prime = {0xffffffff,
                             0xffffffffffffffff,
                             0xffffffffffffffff,
                             0xffffffffffffffff};
+
+static const felem curve_b = {0x2a85c8edd3ec2aef,
+                              0xc656398d8a2ed19d,
+                              0x314088f5013875a,
+                              0x181d9c6efe814112,
+                              0x988e056be3f82d19,
+                              0xb3312fa7e23ee7e4};
 
 static const felem base_x = {0x3a545e3872760ab7,
                              0x5502f25dbf55296c,
@@ -31,21 +49,46 @@ static const felem base_y = {0x7a431d7c90ea0e5f,
                              0xf8f41dbd289a147c,
                              0x5d9e98bf9292dc29,
                              0x3617de4a96262c6f};
+static const uint64_t mont_const = 4294967297;
+/* Debugging help */
+static void
+dumpelem(char *name, const felem b){
+  return;
+  printf("%s = 0 ", name);
+  for(int i=0; i<6; i++){
+    printf("+ (2**(64*%d))*%llu", i, b[i]);
+  }
+  printf("\n");
+}
+
+static void
+dumprod(char *name, const uint64_t p[13]){
+  return;
+  printf("%s = 0 ", name);
+  for(int i=0; i<13; i++){
+    printf("+ (2**(64*%d))*%llu", i, p[i]);
+  }
+  printf("\n");
+}
+
 /* Representation dependent arithmetic */
 static void reduce_add_sub(felem a, uint64_t carry){
+  assert((carry==0) || (carry==1));
   uint64_t pb = 0;
   uint64_t b = 0;
   felem d;
   uint64_t do_sub;
   uint64_t mask_sub;
   uint64_t mask_nosub;
+  uint128_t t;
   for(int i=0; i<6; i++){
-    b = 0;
-    d[i] = a[i]-prime[i];
-    b += (d[i]>a[i]);
-    d[i] -= pb;
-    b += (d[i] == UINT64_MAX) & pb;
+    t = (uint128_t) prime[i] + pb;
+    b = (t>(uint128_t) a[i]);
+    t = ((uint128_t)a[i]+(((uint128_t) b)<<64))-t;
+    assert(t<(((uint128_t)1) << 64));
+    d[i] = (uint64_t) t;
     pb = b;
+    assert((pb==0) || (pb==1));
   }
   do_sub = 1- ((carry + pb) & 0x1);
   mask_sub = 1+~do_sub;
@@ -60,12 +103,12 @@ add(felem r, const felem a, const felem b)
 {
   uint64_t carryin = 0;
   uint64_t carryout = 0;
+  uint128_t t;
   for(int i=0; i<6; i++){
     carryin = carryout;
-    r[i] = a[i] + b[i];
-    carryout = (r[i]<a[i]);
-    r[i] += carryin;
-    carryout + =(r[i]==0);
+    t = ((uint128_t)a[i]) +(uint128_t)b[i]+carryin;
+    r[i] = (uint64_t) t;
+    carryout = (uint64_t)(t>>64);
   }
   reduce_add_sub(r, carryout);
 }
@@ -83,7 +126,8 @@ negate(felem r, const felem a)
     b += (r[i] == UINT64_MAX) & pb;
     pb = b;
   }
-  reduce_add_sub(r);
+  assert(pb==0);
+  reduce_add_sub(r, 0);
 }
 
 static void
@@ -95,7 +139,7 @@ sub(felem r, const felem a, const felem b)
 }
 
 static void
-mult_nored(uint64_t prod[13], felem a, felem b){
+mult_nored(uint64_t prod[13], const felem a, const felem b){
   uint128_t t;
   uint64_t carry;
   for(int i=0; i<13; i++){
@@ -104,7 +148,7 @@ mult_nored(uint64_t prod[13], felem a, felem b){
   for(int i=0; i<6; i++){
     carry = 0;
     for(int j=0; j<6; j++){
-      t = (uint128_t)a[i]*b[i]+prod[i+j]+carry;
+      t = ((uint128_t)a[i])*b[j]+prod[i+j]+carry;
       prod[i+j] = (uint64_t) t;
       carry = (uint64_t) (t>>64);
     }
@@ -113,29 +157,51 @@ mult_nored(uint64_t prod[13], felem a, felem b){
 }
 
 static void
-mult_red(felem r, uint64_t restrict p[13]){
+mult_red(felem r, uint64_t p[13]){
   // products are 1 bigger to hold carry from Montgomery reduction.
   uint128_t t;
   uint64_t carry;
   uint64_t delayed[6];
   uint64_t m;
   for (int i = 0; i < 6; i++) {
-    m = p[i];
+    m = p[i]*mont_const;
     carry = 0;
     for (int j = 0; j < 6; j++) { /* This adds a multiple of prime that makes p[i] zero */
       t = (uint128_t)p[i + j] + ((uint128_t)m) * prime[j] + carry;
       p[i + j] = (uint64_t)t;
       carry = (uint64_t)(t >> 64);
     }
+    assert(p[i]==0);
     delayed[i] = carry;
   }
   carry = 0;
   for (int i = 0; i < 6; i++) {
     t = ((uint128_t)p[i + 6]) + carry + delayed[i];
-    r[i] = t & mask_lo;
-    carry = t >> 32;
+    r[i] = (uint64_t) t;
+    carry = (uint64_t) (t >> 64);
   }
-  reduce_add_sub(r, carry);
+  reduce_add_sub(r, carry+p[12]);
+}
+
+static void
+mult(felem r, const felem a, const felem b){
+  uint64_t p[13];
+  mult_nored(p, a, b);
+  mult_red(r, p);
+}
+
+static void
+sqr(felem r, const felem a){
+  mult(r, a, a);
+}
+
+static bool
+iszero(const felem r){
+  uint64_t diff = 0;
+  for(int i=0; i<6; i++){
+    diff |= r[i];
+  }
+  return diff == 0;
 }
 
 static void
@@ -143,7 +209,7 @@ pack(unsigned char out[48], const felem a){
   unsigned char tmp[48];
   for(int i=0; i<6; i++){
     for(int j=0; j<8; j++){
-      tmp[8*i+j] = (a[i]>>j) & 0xff;
+      tmp[8*i+j] = (a[i]>>(8*j)) & 0xff;
     }
   }
   for(int i=0; i<48; i++){
@@ -153,19 +219,19 @@ pack(unsigned char out[48], const felem a){
 
 static void
 unpack(felem a, const unsigned char in[48]){
-  unsigned char tmp[49];
+  unsigned char tmp[48];
   for(int i=0; i<48; i++){
     tmp[i] = in[47-i];
   }
   for(int i=0; i<6; i++){
-    a[i] = tmp[8*i]
-      | (tmp[8*i+1] << 8)
-      | (tmp[8*i+2] << 16)
-      | (tmp[8*i+3] << 24)
-      | (tmp[8*i+4] << 32)
-      | (tmp[8*i+5] << 40)
-      | (tmp[8*i+6] << 48)
-      | (tmp[8*i+7] << 56);
+    a[i] = (uint64_t) tmp[8*i]
+      | ((uint64_t)tmp[8*i+1] << 8)
+      | ((uint64_t)tmp[8*i+2] << 16)
+      | ((uint64_t)tmp[8*i+3] << 24)
+      | ((uint64_t)tmp[8*i+4] << 32)
+      | ((uint64_t)tmp[8*i+5] << 40)
+      | ((uint64_t)tmp[8*i+6] << 48)
+      | ((uint64_t)tmp[8*i+7] << 56);
   }
 }
 
@@ -182,7 +248,7 @@ equal(const felem a, const felem b)
 {
   uint64_t d = 0;
   for(int i=0; i<6; i++){
-    d |= a[i]^b[i];
+    d |= (a[i]^b[i]);
   }
   return d==0;
 }
@@ -705,7 +771,6 @@ recode(int out_d[77], int out_s[77], const unsigned char key[48])
         carry = sub;
         out_d[k] = word;
         out_s[k] = sub;
-	assert(word<=16);
         k++;
         word = 0;
         bits = 0;
@@ -735,7 +800,7 @@ scalarmult(felem x_out, felem y_out, const felem x_in, const felem y_in,
   int recoded_index[77];
   int recoded_sign[77];
   recode(recoded_index, recoded_sign, key);
-  for (int i = 0; i < 12; i++) {
+  for (int i = 0; i < 6; i++) {
     xQ[i] = 0;
     yQ[i] = 0;
     zQ[i] = 0;
@@ -766,6 +831,7 @@ scalarmult(felem x_out, felem y_out, const felem x_in, const felem y_in,
   bool first = 1;
   bool seen_1 = 0;
   for (int i = 76; i >= 0; i--) {
+    assert(oncurve(xQ, yQ, zQ, false));
     if (!first) {
       double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
       double_pt(xQ, yQ, zQ, xQ, yQ, zQ);
@@ -879,7 +945,6 @@ scalarmult_double(felem x, felem y, const felem x1, const felem y1, const unsign
       readd_pt_tot(xQ, yQ, zQ, xQ, yQ, zQ, table2[r_d2[i]][0], yT, table2[r_d2[i]][2], table2[r_d2[i]][3], table2[r_d2[i]][4]);
     }
     first = 0;
-    assert(oncurve(xQ, yQ, zQ, false));
   }
   to_affine(x, y, xQ, yQ, zQ);
   from_mont(x, x);
@@ -888,7 +953,7 @@ scalarmult_double(felem x, felem y, const felem x1, const felem y1, const unsign
 
 /* Interface to outside world */
 bool
-p384_32_valid(unsigned char p[96])
+p384_64_valid(unsigned char p[96])
 {
   felem x;
   felem y;
@@ -899,7 +964,7 @@ p384_32_valid(unsigned char p[96])
 }
 
 void
-p384_32_scalarmult(unsigned char q[96], const unsigned char n[48],
+p384_64_scalarmult(unsigned char q[96], const unsigned char n[48],
                    const unsigned char p[96])
 {
   felem x;
@@ -908,32 +973,27 @@ p384_32_scalarmult(unsigned char q[96], const unsigned char n[48],
   felem y_t;
   unpack(x, p);
   unpack(y, p + 48);
-  felem one = { 1 };
-  if (!oncurve(x, y, one, true)) {
-    printf("Invalid point used\n");
-    p384_32_scalarmult_base(q, n);
-  } else {
-    scalarmult(x_t, y_t, x, y, n);
-    pack(q, x_t);
-    pack(q + 48, y_t);
-  }
+  scalarmult(x_t, y_t, x, y, n);
+  pack(q, x_t);
+  pack(q + 48, y_t);
 }
 
 void
-p384_32_scalarmult_base(unsigned char q[96], const unsigned char n[48])
+p384_64_scalarmult_base(unsigned char q[96], const unsigned char n[48])
 {
   felem x;
   felem y;
+  felem one = {1};
+  assert(oncurve(base_x, base_y, one, true));
   scalarmult(x, y, base_x, base_y, n);
   pack(q, x);
+  unpack(x, q);
   pack(q + 48, y);
-  if(!p384_32_valid(q)){
-    printf("base produced wrong result!\n");
-  }
+  unpack(x, q);
 }
 
 void
-p384_32_double_scalarmult_base(unsigned char q[96], const unsigned char a[96], const unsigned char n1[48], const unsigned char n2[48]){
+p384_64_double_scalarmult_base(unsigned char q[96], const unsigned char a[96], const unsigned char n1[48], const unsigned char n2[48]){
   felem x_a;
   felem y_a;
   felem x;
