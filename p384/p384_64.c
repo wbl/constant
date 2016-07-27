@@ -80,13 +80,12 @@ static void reduce_add_sub(felem a, uint64_t carry){
   uint64_t do_sub;
   uint64_t mask_sub;
   uint64_t mask_nosub;
-  uint128_t t;
   for(int i=0; i<6; i++){
-    t = (uint128_t) prime[i] + pb;
-    b = (t>(uint128_t) a[i]);
-    t = ((uint128_t)a[i]+(((uint128_t) b)<<64))-t;
-    assert(t<(((uint128_t)1) << 64));
-    d[i] = (uint64_t) t;
+    b = 0;
+    d[i] = a[i]-prime[i];
+    b += (d[i]>a[i]);
+    d[i] -= pb;
+    b += (d[i] == UINT64_MAX) & pb;
     pb = b;
     assert((pb==0) || (pb==1));
   }
@@ -103,12 +102,14 @@ add(felem r, const felem a, const felem b)
 {
   uint64_t carryin = 0;
   uint64_t carryout = 0;
-  uint128_t t;
+  uint64_t t;
   for(int i=0; i<6; i++){
     carryin = carryout;
-    t = ((uint128_t)a[i]) +(uint128_t)b[i]+carryin;
-    r[i] = (uint64_t) t;
-    carryout = (uint64_t)(t>>64);
+    t = a[i] + b[i];
+    carryout = t<a[i];
+    t += carryin;
+    carryout += (t == 0) & carryin;
+    r[i] = t;
   }
   reduce_add_sub(r, carryout);
 }

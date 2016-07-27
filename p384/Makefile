@@ -1,6 +1,6 @@
-CFLAGS=-g -I/opt/local/include -O3 -fsanitize=address
+CFLAGS=-g -I/opt/local/include -O3
 CC=clang-mp-3.9
-LDFLAGS=-lgmp -L/opt/local/lib -fsanitize=address
+LDFLAGS=-lgmp -L/opt/local/lib
 .PHONY: all
 .PHONY: clean
 all: p384_32_test p384_32_time p384_32_time_double p384_32_test_ecdsa p384_32_secgrind p384_64_test p384_64_time p384_64_time_double p384_64_test_ecdsa p384_64_secgrind
