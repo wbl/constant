@@ -160,7 +160,6 @@ add(felem r, const felem a, const felem b){ /*Precondition: a[i] and b[i] <2^r, 
   for(int i=0; i<19; i++){
     r[i] = a[i]+b[i];
   }
-  mostly_reduce(r);
 }
 
 static void
@@ -185,6 +184,11 @@ mult_nored(uint64_t r[38], const felem a, const felem b){
       r[i+j]+=((uint64_t)a[i])*b[j];
     }
   }
+}
+
+static void
+sqr_nored(uint64_t r[38], const felem a){
+  mult_nored(r, a, a);
 }
 
 static void
@@ -265,7 +269,7 @@ mul8(felem r, const felem a){
 static void
 sqr(felem r, const felem a){
   uint64_t prod[38];
-  mult_nored(prod, a, a);
+  sqr_nored(prod, a);
   multred(r, prod);
 }
 
