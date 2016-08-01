@@ -1,4 +1,4 @@
-CFLAGS = -g -I/opt/local/include -Wall -O0 
+CFLAGS = -g -I/opt/local/include -Wall -O3
 LDFLAGS=-lgmp -L/opt/local/lib 
 CC = gcc-mp-6
 .PHONY: all

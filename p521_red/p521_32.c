@@ -148,24 +148,29 @@ reduce_total(felem a){
 }
 
 static void
+mostly_reduce(felem a){
+  carry_prop(a);
+  reduce_carry(a);
+}
+
+static void
 add(felem r, const felem a, const felem b){ /*Precondition: a[i] and b[i] <2^r, r<30*/
   /*Postcondition: r[i] < 2^(r+1) */
   /* In practice result will need to be 29 bits, and so input 28 bits */
   for(int i=0; i<19; i++){
     r[i] = a[i]+b[i];
   }
-  reduce_total(r);
+  mostly_reduce(r);
 }
 
 static void
 sub(felem r, const felem a, const felem b){
-  //Sometimes fails: figure out why carefully.
 /* Preconditions: each element of b[i]<2^28, b < 4*p, a[i]<2^29 */
 /* Postconditions: r[i]<2^29, r<2p*/
   for(int i=0; i<19; i++){
     r[i]=a[i]+(4*prime[i]-b[i]);
   }
-  reduce_total(r);
+  mostly_reduce(r);
 }
 
 static void
@@ -207,17 +212,11 @@ multred(felem r, uint64_t prod[38]){
   for(int i=0; i<19; i++){
     r[i] = prod[i];
   }
-  carry_prop(r);
-  reduce_carry(r);
-  carry_prop(r);
-  reduce_carry(r); //XXX argue this enough to make add safe, or not.
-  reduce_total(r);
+  mostly_reduce(r);
 }
 
 static void
 mult(felem r, const felem a, const felem b){
-  assert(is_fully_reduced(a));
-  assert(is_fully_reduced(b));
   //  printelem("mult_a", a);
   //printelem("mult_b", b);
   uint64_t prod[38];
@@ -241,22 +240,26 @@ mul2(felem r, const felem a){
 
 static void
 mul3(felem r, const felem a){
-  add(r, a, a);
-  add(r, r, a);
+  for(int i=0; i<19; i++){
+    r[i] = 3*a[i];
+  }
+  mostly_reduce(r);
 }
 
 static void
 mul4(felem r, const felem a){
-  add(r,a, a);
-  add(r, r, r);
-  reduce_total(r);
+  for(int i=0; i<19; i++){
+    r[i] = 4*a[i];
+  }
+  mostly_reduce(r);
 }
 
 static void
 mul8(felem r, const felem a){
-  add(r, a, a);
-  add(r, r, r);
-  add(r, r, r);
+  for(int i=0; i<19; i++){
+    r[i] = 8*a[i];
+  }
+  mostly_reduce(r);
 }
 
 static void
