@@ -188,7 +188,20 @@ mult_nored(uint64_t r[38], const felem a, const felem b){
 
 static void
 sqr_nored(uint64_t r[38], const felem a){
-  mult_nored(r, a, a);
+  for(int i=0; i<38; i++){
+    r[i] = 0;
+  }
+  for(int i=0; i<19; i++){
+    for(int j=0; j<i; j++){
+      r[i+j]+=((uint64_t)a[i])*a[j];
+    }
+  }
+  for(int i=0; i<38; i++){
+    r[i] <<= 1;
+  }
+  for(int i=0; i<19; i++){
+    r[2*i] += ((uint64_t)a[i])*a[i];
+  }
 }
 
 static void
