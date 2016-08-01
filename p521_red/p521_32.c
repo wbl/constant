@@ -78,6 +78,26 @@ static const felem base_y ={0xfd16650,
 
 static const uint32_t bottom28 = 0x0fffffff;
 static const uint32_t topmask = (1<<17)-1;
+/* Debugging functions */
+static void
+printelem(char *name, const felem a){
+  printf("%s = 0 ", name);
+  for(int i=0; i<19; i++){
+    printf("+ 2**(28*%d)*%u", i, a[i]);
+  }
+  printf("\n");
+}
+
+static bool
+is_fully_reduced(const felem a){
+  int flag = 1;
+  for(int i=0; i<19; i++){
+    flag &= (a[i] <= bottom28);
+  }
+  flag &= (a[18]<= prime[18]);
+  return flag;
+}
+
 /* Field Arithmetic */
 static void
 reduce_carry(felem a){
@@ -103,10 +123,14 @@ carry_prop(felem a){ /* moves carries down, lets a[18] grow */
 
 static void
 reduce_total(felem a){
+  //  printelem("red_in", a);
+  // printelem("prime", prime);
   felem d;
   uint32_t mask;
   carry_prop(a); //shrink limbs
   reduce_carry(a); //a<p+1
+  carry_prop(a);
+  reduce_carry(a);
   for(int i=0; i<19; i++){
     d[i]=a[i];
   }
@@ -118,6 +142,9 @@ reduce_total(felem a){
   for(int i=0; i<19; i++){
     a[i] ^=(a[i]^d[i])&mask; //conditional swap
   }
+  assert(is_fully_reduced(a));
+  //printelem("red_out", a);
+  //printf("print 'red_res', (red_in %% prime) == (red_out %% prime)\n");
 }
 
 static void
@@ -127,17 +154,18 @@ add(felem r, const felem a, const felem b){ /*Precondition: a[i] and b[i] <2^r, 
   for(int i=0; i<19; i++){
     r[i] = a[i]+b[i];
   }
+  reduce_total(r);
 }
 
 static void
 sub(felem r, const felem a, const felem b){
+  //Sometimes fails: figure out why carefully.
 /* Preconditions: each element of b[i]<2^28, b < 4*p, a[i]<2^29 */
 /* Postconditions: r[i]<2^29, r<2p*/
   for(int i=0; i<19; i++){
     r[i]=a[i]+(4*prime[i]-b[i]);
   }
-  carry_prop(r);
-  reduce_carry(r);
+  reduce_total(r);
 }
 
 static void
@@ -149,7 +177,7 @@ mult_nored(uint64_t r[38], const felem a, const felem b){
   }
   for(int i=0; i<19; i++){
     for(int j=0; j<19; j++){
-      r[i+j]+=a[i]*b[j];
+      r[i+j]+=((uint64_t)a[i])*b[j];
     }
   }
 }
@@ -183,46 +211,52 @@ multred(felem r, uint64_t prod[38]){
   reduce_carry(r);
   carry_prop(r);
   reduce_carry(r); //XXX argue this enough to make add safe, or not.
+  reduce_total(r);
 }
 
 static void
 mult(felem r, const felem a, const felem b){
+  assert(is_fully_reduced(a));
+  assert(is_fully_reduced(b));
+  //  printelem("mult_a", a);
+  //printelem("mult_b", b);
   uint64_t prod[38];
   mult_nored(prod, a, b);
+  //printf("mult_interm = 0");
+  //for(int i=0; i<38; i++){
+  //  printf(" + 2**(28*%d)*%llu", i, prod[i]);
+  //}
+  //printf("\n");
   multred(r, prod);
+  //printelem("mult_res", r);
+  //printelem("prime", prime);
+  //printf("print 'mult_nored', mult_interm == mult_a*mult_b\n");
+  //printf("print 'mult', (mult_a*mult_b) %% prime == mult_res %% prime\n");
 }
 
 static void
 mul2(felem r, const felem a){
-  carry_prop(a);
   add(r, a, a);
 }
 
 static void
 mul3(felem r, const felem a){
-  carry_prop(a);
-  for(int i=0; i<9; i++){
-    r[i]=3*a[i];
-  }
-  carry_prop(r);
+  add(r, a, a);
+  add(r, r, a);
 }
 
 static void
 mul4(felem r, const felem a){
-  carry_prop(a);
-  for(int i=0; i<9; i++){
-    r[i]=4*a[i];
-  }
-  carry_prop(r);
+  add(r,a, a);
+  add(r, r, r);
+  reduce_total(r);
 }
 
 static void
 mul8(felem r, const felem a){
-  carry_prop(a);
-  for(int i=0; i<9; i++){
-    r[i]=8*a[i];
-  }
-  carry_prop(r);
+  add(r, a, a);
+  add(r, r, r);
+  add(r, r, r);
 }
 
 static void
@@ -242,7 +276,7 @@ mov(felem dst, const felem src){
 static void
 cmov(felem r, const felem a, int cond){
   uint32_t mask = -cond;
-  for(int i=0; i<9; i++){
+  for(int i=0; i<19; i++){
     r[i] ^=(r[i]^a[i])&mask;
   }
 }
@@ -250,14 +284,65 @@ cmov(felem r, const felem a, int cond){
 static void
 neg_cond(felem r, const felem a, int cond){
   //pre and post conditions same for sub
+  felem tmp;
   felem zero = {0};
-  sub(r, zero, a);
+  sub(tmp, zero, a);
   cmov(r, a, 1-cond);
+  cmov(r, tmp, cond);
+}
+
+static bool
+iszero(const felem a){
+  felem t;
+  mov(t, a);
+  reduce_total(t);
+  uint32_t d = 0;
+  for(int i=0; i<19; i++){
+    d |= t[i];
+  }
+  return d==0;
+}
+
+static bool
+equal(const felem a, const felem b){
+  felem t_a;
+  felem t_b;
+  uint32_t flag = 0;
+  mov(t_a, a);
+  mov(t_b, b);
+  reduce_total(t_a);
+  reduce_total(t_b);
+  for(int i=0; i<19; i++){
+    flag |= a[i]^b[i];
+  }
+  return flag == 0;
+}
+// The below don't work. Why not?
+static void
+unpack(felem a, const unsigned char s[66]){
+  unsigned char t[66];
+  for(int i=0; i<66; i++){
+    t[i]=s[65-i];
+  }
+  for(int i=0; i<9; i++){
+    a[2*i] = (uint32_t) t[7*i]
+    | (t[7*i+1] << 8)
+    | (t[7*i+2] << 16)
+    | ((t[7*i+3] &0xf) << 24);
+    a[2*i+1] = (uint32_t) t[7*i+3]
+    | (t[7*i+4] << 8)
+    | (t[7*i+5] << 16)
+    | (t[7*i+6] << 24);
+    a[2*i+1] >>= 4;
+  }
+  a[18] = t[63] | (t[64] <<8) | (t[65]<<16);
 }
 
 static void
 pack(unsigned char s[66], const felem a){
   unsigned char t[66];
+  felem tmp;
+  assert(is_fully_reduced(a));
   for(int i=0; i<9; i++){
     t[7*i] = a[2*i];
     t[7*i+1] = a[2*i]>>8;
@@ -274,27 +359,17 @@ pack(unsigned char s[66], const felem a){
   for(int i=0; i<66; i++){
     s[i]=t[65-i];
   }
+  unpack(tmp, s);
+  if(!equal(tmp, a)){
+    for(int i=0; i<19; i++){
+      printf("%d, %08x, %08x\n", i, tmp[i], a[i]);
+    }
+  }
+  assert(is_fully_reduced(a));
+  assert(equal(tmp, a));
 }
 
-static void
-unpack(felem a, const unsigned char s[66]){
-  unsigned char t[66];
-  for(int i=0; i<66; i++){
-    t[i]=s[65-i];
-  }
-  for(int i=0; i<9; i++){
-    a[2*i] = (uint32_t) t[7*i]
-    | (t[7*i+1] << 8)
-    | (t[7*i+2] << 16)
-    | (t[7*i+3] << 24);
-    a[2*i+1] = (uint32_t) t[7*i+3]
-    | (t[7*i+4] << 8)
-    | (t[7*i+5] << 16)
-    | (t[7*i+6] << 24);
-    a[2*i+1] >>= 4;
-  }
-  a[18] = t[63] | (t[64] <<8) | (t[65]<<16);  
-}
+
 
 static void
 inv(felem r, const felem a)
@@ -464,7 +539,7 @@ add_pt_tot(felem x3, felem y3, felem z3, const felem x1, const felem y1,
       double_pt(x3, y3, z3, x1, y1, z1);
       return;
     } else {
-      for(int i=0; i<17; i++){
+      for(int i=0; i<19; i++){
         x3[i]=0;
         y3[i]=0;
 	z3[i]=0;
@@ -622,13 +697,16 @@ scalarmult(felem x2, felem y2, felem z2, const felem px, const felem py, const u
   felem xR, yR, zR;
   felem table[17][3];
   felem one={1};
-  for(int i=0; i<17; i++){
+  for(int i=0; i<19; i++){
     table[0][0][i]=0;
     table[0][1][i]=0;
     table[0][2][i]=0;
     x2[i]=0;
     y2[i]=0;
     z2[i]=0;
+    xT[i]=0;
+    yT[i]=0;
+    zT[i]=0;
   }
   x2[0]=1;
   y2[0]=1;
@@ -690,14 +768,14 @@ double_scalarmult(felem x3, felem y3, felem z3, const unsigned char s1[66], cons
   felem yT;
   int must_double = 0;
   int index;
-  for(int i=0; i<17; i++){
+  for(int i=0; i<19; i++){
     x3[i]=0;
     y3[i]=0;
     z3[i]=0;
   }
   x3[0]=1;
   y3[0]=1;
-  for(int i=0; i<17; i++){
+  for(int i=0; i<19; i++){
     table1[0][0][i]=0;
     table1[0][1][i]=0;
     table1[0][2][i]=0;

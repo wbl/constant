@@ -2,6 +2,7 @@
 #include<stdio.h>
 #include<unistd.h>
 #include<stdbool.h>
+#include<stdlib.h>
 #include "p521_32.h"
 
 
@@ -12,8 +13,10 @@ int main(){
   unsigned char B[132];
   unsigned char KAB[132];
   unsigned char KBA[132];
+  int outer = 0;
   int fd = open("/dev/urandom", O_RDONLY);
-  for(int i=0; i<10; i++){
+  
+  for(int i=0; i<1; i++){
     read(fd, ask, 66);
     read(fd, bsk, 66);
     ask[65]=0;
@@ -27,7 +30,13 @@ int main(){
       flag |= KAB[i]^KBA[i];
     }
     if(flag){
-      printf("DH failure\n");
+      printf("print 'DH', False\n");
+      outer = 1;
     }
+  }
+  if(outer){
+    exit(1);
+  }else{
+    exit(0);
   }
 }
