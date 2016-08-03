@@ -140,10 +140,10 @@ sub(felem r, const felem a, const felem b)
 }
 
 static void
-mult_nored(uint64_t prod[13], const felem a, const felem b){
+mult_nored(uint64_t prod[12], const felem a, const felem b){
   uint128_t t;
   uint64_t carry;
-  for(int i=0; i<13; i++){
+  for(int i=0; i<12; i++){
     prod[i] = 0;
   }
   for(int i=0; i<6; i++){
@@ -158,7 +158,7 @@ mult_nored(uint64_t prod[13], const felem a, const felem b){
 }
 
 static void
-mult_red(felem r, uint64_t p[13]){
+mult_red(felem r, uint64_t p[12]){
   // products are 1 bigger to hold carry from Montgomery reduction.
   uint128_t t;
   uint64_t carry;
@@ -181,12 +181,12 @@ mult_red(felem r, uint64_t p[13]){
     r[i] = (uint64_t) t;
     carry = (uint64_t) (t >> 64);
   }
-  reduce_add_sub(r, carry+p[12]);
+  reduce_add_sub(r, carry);
 }
 
 static void
 mult(felem r, const felem a, const felem b){
-  uint64_t p[13];
+  uint64_t p[12];
   mult_nored(p, a, b);
   mult_red(r, p);
 }

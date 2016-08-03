@@ -112,7 +112,7 @@ sub(felem r, const felem a, const felem b)
 }
 
 static void
-prod_red(felem r, uint32_t p[25])
+prod_red(felem r, uint32_t p[24])
 {
   uint64_t t;
   uint32_t carry;
@@ -135,7 +135,7 @@ prod_red(felem r, uint32_t p[25])
     r[i] = t & mask_lo;
     carry = t >> 32;
   }
-  reduce_add_sub(r, delayed[12] + p[24] + carry);
+  reduce_add_sub(r, delayed[12] + carry);
 }
 
 /* Question: how to multiply by 2, 3, and 8? A: 2 is easy, as is 3. For 8
@@ -169,11 +169,11 @@ mul8(felem c, const felem a)
 }
 
 static void
-mult_nored(uint32_t prod[25], const felem a, const felem b)
+mult_nored(uint32_t prod[24], const felem a, const felem b)
 {
   uint64_t t;
   uint32_t carry;
-  for (int i = 0; i < 25; i++) {
+  for (int i = 0; i < 24; i++) {
     prod[i] = 0;
   }
   for (int i = 0; i < 12; i++) { /*TODO: Karastuba?*/
@@ -190,7 +190,7 @@ mult_nored(uint32_t prod[25], const felem a, const felem b)
 static void
 mult(felem r, const felem a, const felem b)
 {
-  uint32_t prod[25];
+  uint32_t prod[24];
   mult_nored(prod, a, b);
   prod_red(r, prod);
 }
@@ -198,10 +198,10 @@ mult(felem r, const felem a, const felem b)
 static void
 sqr(felem r, const felem a)
 { /* Doesn't seem to help very much*/
-  uint32_t prod[25];
+  uint32_t prod[24];
   uint64_t t;
   uint32_t carry;
-  for (int i = 0; i < 25; i++) {
+  for (int i = 0; i < 24; i++) {
     prod[i] = 0;
   }
 
@@ -215,7 +215,7 @@ sqr(felem r, const felem a)
     prod[12 + i] = carry;
   }
   carry = 0;
-  for (int i = 0; i < 25; i++) {
+  for (int i = 0; i < 24; i++) {
     t = ((uint64_t)prod[i]) * 2 + carry;
     prod[i] = (uint32_t)t;
     carry = t >> 32;
