@@ -1,6 +1,6 @@
-CFLAGS = -g -I/opt/local/include -Wall -O3
-LDFLAGS=-lgmp -L/opt/local/lib
-CC = gcc-mp-6
+CFLAGS = -g -I/opt/local/include -Wall -O3 -m32
+LDFLAGS=-lgmp -L/opt/local/lib -m32
+CC = clang-mp-3.9
 .PHONY: all
 .PHONY: clean
 all: p521_32_dh_test p521_32_dh_time p521_32_kat_test p521_32_test_ecdsa
