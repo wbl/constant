@@ -121,7 +121,7 @@ static void sub(felem r, const felem a, const felem b) {
   mostly_reduce(r);
 }
 
-static void mult_nored(uint32_t r[38], const felem a, const felem b) {
+static void mult_nored(uint32_t *restrict r, const felem a, const felem b) {
   /* Precondition: a[i]<2^29, b[i]<2^29 */
   /* Postcondition r[i]<19*2^58<2^63*/
   uint64_t carry;
@@ -132,27 +132,27 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[0] = t - (carry << 28);
+  r[0] = t & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[1] + ((uint64_t)a[1]) * b[0];
 
   carry = t >> 28;
 
-  r[1] = t - (carry << 28);
+  r[1] = t & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[2] + ((uint64_t)a[1]) * b[1] +
       ((uint64_t)a[2]) * b[0];
 
   carry = t >> 28;
 
-  r[2] = t - (carry << 28);
+  r[2] = t & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[3] + ((uint64_t)a[1]) * b[2] +
       ((uint64_t)a[2]) * b[1] + ((uint64_t)a[3]) * b[0];
 
   carry = t >> 28;
 
-  r[3] = t - (carry << 28);
+  r[3] = t & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[4] + ((uint64_t)a[1]) * b[3] +
       ((uint64_t)a[2]) * b[2] + ((uint64_t)a[3]) * b[1] +
@@ -160,7 +160,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[4] = t - (carry << 28);
+  r[4] = t & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[5] + ((uint64_t)a[1]) * b[4] +
       ((uint64_t)a[2]) * b[3] + ((uint64_t)a[3]) * b[2] +
@@ -168,7 +168,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[5] = t - (carry << 28);
+  r[5] = t & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[6] + ((uint64_t)a[1]) * b[5] +
       ((uint64_t)a[2]) * b[4] + ((uint64_t)a[3]) * b[3] +
@@ -177,7 +177,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[6] = t - (carry << 28);
+  r[6] = t  & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[7] + ((uint64_t)a[1]) * b[6] +
       ((uint64_t)a[2]) * b[5] + ((uint64_t)a[3]) * b[4] +
@@ -186,7 +186,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[7] = t - (carry << 28);
+  r[7] = t & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[8] + ((uint64_t)a[1]) * b[7] +
       ((uint64_t)a[2]) * b[6] + ((uint64_t)a[3]) * b[5] +
@@ -196,7 +196,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[8] = t - (carry << 28);
+  r[8] = t & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[9] + ((uint64_t)a[1]) * b[8] +
       ((uint64_t)a[2]) * b[7] + ((uint64_t)a[3]) * b[6] +
@@ -206,7 +206,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[9] = t - (carry << 28);
+  r[9] = t  & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[10] + ((uint64_t)a[1]) * b[9] +
       ((uint64_t)a[2]) * b[8] + ((uint64_t)a[3]) * b[7] +
@@ -217,7 +217,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[10] = t - (carry << 28);
+  r[10] = t & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[11] + ((uint64_t)a[1]) * b[10] +
       ((uint64_t)a[2]) * b[9] + ((uint64_t)a[3]) * b[8] +
@@ -228,7 +228,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[11] = t - (carry << 28);
+  r[11] = t & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[12] + ((uint64_t)a[1]) * b[11] +
       ((uint64_t)a[2]) * b[10] + ((uint64_t)a[3]) * b[9] +
@@ -240,7 +240,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[12] = t - (carry << 28);
+  r[12] = t & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[13] + ((uint64_t)a[1]) * b[12] +
       ((uint64_t)a[2]) * b[11] + ((uint64_t)a[3]) * b[10] +
@@ -252,7 +252,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[13] = t - (carry << 28);
+  r[13] = t & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[14] + ((uint64_t)a[1]) * b[13] +
       ((uint64_t)a[2]) * b[12] + ((uint64_t)a[3]) * b[11] +
@@ -265,7 +265,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[14] = t - (carry << 28);
+  r[14] = t & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[15] + ((uint64_t)a[1]) * b[14] +
       ((uint64_t)a[2]) * b[13] + ((uint64_t)a[3]) * b[12] +
@@ -278,7 +278,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[15] = t - (carry << 28);
+  r[15] = t  & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[16] + ((uint64_t)a[1]) * b[15] +
       ((uint64_t)a[2]) * b[14] + ((uint64_t)a[3]) * b[13] +
@@ -292,7 +292,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[16] = t - (carry << 28);
+  r[16] = t  & bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[17] + ((uint64_t)a[1]) * b[16] +
       ((uint64_t)a[2]) * b[15] + ((uint64_t)a[3]) * b[14] +
@@ -306,7 +306,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[17] = t - (carry << 28);
+  r[17] = t  &bottom28;
 
   t = carry + ((uint64_t)a[0]) * b[18] + ((uint64_t)a[1]) * b[17] +
       ((uint64_t)a[2]) * b[16] + ((uint64_t)a[3]) * b[15] +
@@ -321,7 +321,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[18] = t - (carry << 28);
+  r[18] = t  & bottom28;
 
   t = carry + ((uint64_t)a[1]) * b[18] + ((uint64_t)a[2]) * b[17] +
       ((uint64_t)a[3]) * b[16] + ((uint64_t)a[4]) * b[15] +
@@ -335,7 +335,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[19] = t - (carry << 28);
+  r[19] = t  & bottom28;
 
   t = carry + ((uint64_t)a[2]) * b[18] + ((uint64_t)a[3]) * b[17] +
       ((uint64_t)a[4]) * b[16] + ((uint64_t)a[5]) * b[15] +
@@ -349,7 +349,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[20] = t - (carry << 28);
+  r[20] = t  & bottom28;
 
   t = carry + ((uint64_t)a[3]) * b[18] + ((uint64_t)a[4]) * b[17] +
       ((uint64_t)a[5]) * b[16] + ((uint64_t)a[6]) * b[15] +
@@ -362,7 +362,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[21] = t - (carry << 28);
+  r[21] = t  & bottom28;
 
   t = carry + ((uint64_t)a[4]) * b[18] + ((uint64_t)a[5]) * b[17] +
       ((uint64_t)a[6]) * b[16] + ((uint64_t)a[7]) * b[15] +
@@ -375,7 +375,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[22] = t - (carry << 28);
+  r[22] = t  & bottom28;
 
   t = carry + ((uint64_t)a[5]) * b[18] + ((uint64_t)a[6]) * b[17] +
       ((uint64_t)a[7]) * b[16] + ((uint64_t)a[8]) * b[15] +
@@ -387,7 +387,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[23] = t - (carry << 28);
+  r[23] = t  & bottom28;
 
   t = carry + ((uint64_t)a[6]) * b[18] + ((uint64_t)a[7]) * b[17] +
       ((uint64_t)a[8]) * b[16] + ((uint64_t)a[9]) * b[15] +
@@ -399,7 +399,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[24] = t - (carry << 28);
+  r[24] = t  & bottom28;
 
   t = carry + ((uint64_t)a[7]) * b[18] + ((uint64_t)a[8]) * b[17] +
       ((uint64_t)a[9]) * b[16] + ((uint64_t)a[10]) * b[15] +
@@ -410,7 +410,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[25] = t - (carry << 28);
+  r[25] = t  & bottom28;
 
   t = carry + ((uint64_t)a[8]) * b[18] + ((uint64_t)a[9]) * b[17] +
       ((uint64_t)a[10]) * b[16] + ((uint64_t)a[11]) * b[15] +
@@ -421,7 +421,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[26] = t - (carry << 28);
+  r[26] = t  & bottom28;
 
   t = carry + ((uint64_t)a[9]) * b[18] + ((uint64_t)a[10]) * b[17] +
       ((uint64_t)a[11]) * b[16] + ((uint64_t)a[12]) * b[15] +
@@ -431,7 +431,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[27] = t - (carry << 28);
+  r[27] = t & bottom28;
 
   t = carry + ((uint64_t)a[10]) * b[18] + ((uint64_t)a[11]) * b[17] +
       ((uint64_t)a[12]) * b[16] + ((uint64_t)a[13]) * b[15] +
@@ -441,7 +441,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[28] = t - (carry << 28);
+  r[28] = t & bottom28;
 
   t = carry + ((uint64_t)a[11]) * b[18] + ((uint64_t)a[12]) * b[17] +
       ((uint64_t)a[13]) * b[16] + ((uint64_t)a[14]) * b[15] +
@@ -450,7 +450,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[29] = t - (carry << 28);
+  r[29] = t & bottom28;
 
   t = carry + ((uint64_t)a[12]) * b[18] + ((uint64_t)a[13]) * b[17] +
       ((uint64_t)a[14]) * b[16] + ((uint64_t)a[15]) * b[15] +
@@ -467,7 +467,7 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[31] = t - (carry << 28);
+  r[31] = t  & bottom28;
 
   t = carry + ((uint64_t)a[14]) * b[18] + ((uint64_t)a[15]) * b[17] +
       ((uint64_t)a[16]) * b[16] + ((uint64_t)a[17]) * b[15] +
@@ -475,42 +475,38 @@ static void mult_nored(uint32_t r[38], const felem a, const felem b) {
 
   carry = t >> 28;
 
-  r[32] = t - (carry << 28);
+  r[32] = t  & bottom28;
 
   t = carry + ((uint64_t)a[15]) * b[18] + ((uint64_t)a[16]) * b[17] +
       ((uint64_t)a[17]) * b[16] + ((uint64_t)a[18]) * b[15];
 
   carry = t >> 28;
 
-  r[33] = t - (carry << 28);
+  r[33] = t  & bottom28;
 
   t = carry + ((uint64_t)a[16]) * b[18] + ((uint64_t)a[17]) * b[17] +
       ((uint64_t)a[18]) * b[16];
 
   carry = t >> 28;
 
-  r[34] = t - (carry << 28);
+  r[34] = t  & bottom28;
 
   t = carry + ((uint64_t)a[17]) * b[18] + ((uint64_t)a[18]) * b[17];
 
   carry = t >> 28;
 
-  r[35] = t - (carry << 28);
+  r[35] = t  & bottom28;
 
   t = carry + ((uint64_t)a[18]) * b[18];
 
   carry = t >> 28;
 
-  r[36] = t - (carry << 28);
+  r[36] = t  & bottom28;
 
-  t = carry;
-
-  carry = t >> 28;
-
-  r[37] = t - (carry << 28);
+  r[37] = carry;
 }
 
-static void sqr_nored(uint32_t r[38], const felem a) {
+static void sqr_nored(uint32_t *restrict r, const felem a) {
   uint64_t carry;
   uint64_t t;
   carry = 0;
@@ -519,53 +515,53 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[0] = t - (carry << 28);
+  r[0] = t & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[1];
 
   carry = t >> 28;
 
-  r[1] = t - (carry << 28);
+  r[1] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[2] + ((uint64_t)a[1]) * a[1];
 
   carry = t >> 28;
 
-  r[2] = t - (carry << 28);
+  r[2] = t & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[3] + ((uint64_t)(a[1] << 1)) * a[2];
 
   carry = t >> 28;
 
-  r[3] = t - (carry << 28);
+  r[3] = t & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[4] + ((uint64_t)(a[1] << 1)) * a[3] +
       ((uint64_t)a[2]) * a[2];
 
   carry = t >> 28;
 
-  r[4] = t - (carry << 28);
+  r[4] = t & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[5] + ((uint64_t)(a[1] << 1)) * a[4] +
       ((uint64_t)(a[2] << 1)) * a[3];
 
   carry = t >> 28;
 
-  r[5] = t - (carry << 28);
+  r[5] = t & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[6] + ((uint64_t)(a[1] << 1)) * a[5] +
       ((uint64_t)(a[2] << 1)) * a[4] + ((uint64_t)a[3]) * a[3];
 
   carry = t >> 28;
 
-  r[6] = t - (carry << 28);
+  r[6] = t & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[7] + ((uint64_t)(a[1] << 1)) * a[6] +
       ((uint64_t)(a[2] << 1)) * a[5] + ((uint64_t)(a[3] << 1)) * a[4];
 
   carry = t >> 28;
 
-  r[7] = t - (carry << 28);
+  r[7] = t & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[8] + ((uint64_t)(a[1] << 1)) * a[7] +
       ((uint64_t)(a[2] << 1)) * a[6] + ((uint64_t)(a[3] << 1)) * a[5] +
@@ -573,7 +569,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[8] = t - (carry << 28);
+  r[8] = t & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[9] + ((uint64_t)(a[1] << 1)) * a[8] +
       ((uint64_t)(a[2] << 1)) * a[7] + ((uint64_t)(a[3] << 1)) * a[6] +
@@ -581,7 +577,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[9] = t - (carry << 28);
+  r[9] = t & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[10] + ((uint64_t)(a[1] << 1)) * a[9] +
       ((uint64_t)(a[2] << 1)) * a[8] + ((uint64_t)(a[3] << 1)) * a[7] +
@@ -589,7 +585,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[10] = t - (carry << 28);
+  r[10] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[11] +
       ((uint64_t)(a[1] << 1)) * a[10] + ((uint64_t)(a[2] << 1)) * a[9] +
@@ -598,7 +594,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[11] = t - (carry << 28);
+  r[11] = t & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[12] +
       ((uint64_t)(a[1] << 1)) * a[11] + ((uint64_t)(a[2] << 1)) * a[10] +
@@ -607,7 +603,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[12] = t - (carry << 28);
+  r[12] = t & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[13] +
       ((uint64_t)(a[1] << 1)) * a[12] + ((uint64_t)(a[2] << 1)) * a[11] +
@@ -616,7 +612,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[13] = t - (carry << 28);
+  r[13] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[14] +
       ((uint64_t)(a[1] << 1)) * a[13] + ((uint64_t)(a[2] << 1)) * a[12] +
@@ -626,7 +622,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[14] = t - (carry << 28);
+  r[14] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[15] +
       ((uint64_t)(a[1] << 1)) * a[14] + ((uint64_t)(a[2] << 1)) * a[13] +
@@ -636,7 +632,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[15] = t - (carry << 28);
+  r[15] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[16] +
       ((uint64_t)(a[1] << 1)) * a[15] + ((uint64_t)(a[2] << 1)) * a[14] +
@@ -646,7 +642,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[16] = t - (carry << 28);
+  r[16] = t  &bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[17] +
       ((uint64_t)(a[1] << 1)) * a[16] + ((uint64_t)(a[2] << 1)) * a[15] +
@@ -656,7 +652,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[17] = t - (carry << 28);
+  r[17] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[0] << 1)) * a[18] +
       ((uint64_t)(a[1] << 1)) * a[17] + ((uint64_t)(a[2] << 1)) * a[16] +
@@ -667,7 +663,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[18] = t - (carry << 28);
+  r[18] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[1] << 1)) * a[18] +
       ((uint64_t)(a[2] << 1)) * a[17] + ((uint64_t)(a[3] << 1)) * a[16] +
@@ -677,7 +673,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[19] = t - (carry << 28);
+  r[19] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[2] << 1)) * a[18] +
       ((uint64_t)(a[3] << 1)) * a[17] + ((uint64_t)(a[4] << 1)) * a[16] +
@@ -687,7 +683,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[20] = t - (carry << 28);
+  r[20] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[3] << 1)) * a[18] +
       ((uint64_t)(a[4] << 1)) * a[17] + ((uint64_t)(a[5] << 1)) * a[16] +
@@ -716,7 +712,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[23] = t - (carry << 28);
+  r[23] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[6] << 1)) * a[18] +
       ((uint64_t)(a[7] << 1)) * a[17] + ((uint64_t)(a[8] << 1)) * a[16] +
@@ -734,7 +730,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[25] = t - (carry << 28);
+  r[25] = t & bottom28;
 
   t = carry + ((uint64_t)(a[8] << 1)) * a[18] +
       ((uint64_t)(a[9] << 1)) * a[17] + ((uint64_t)(a[10] << 1)) * a[16] +
@@ -743,7 +739,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[26] = t - (carry << 28);
+  r[26] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[9] << 1)) * a[18] +
       ((uint64_t)(a[10] << 1)) * a[17] + ((uint64_t)(a[11] << 1)) * a[16] +
@@ -751,7 +747,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[27] = t - (carry << 28);
+  r[27] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[10] << 1)) * a[18] +
       ((uint64_t)(a[11] << 1)) * a[17] + ((uint64_t)(a[12] << 1)) * a[16] +
@@ -767,7 +763,7 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[29] = t - (carry << 28);
+  r[29] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[12] << 1)) * a[18] +
       ((uint64_t)(a[13] << 1)) * a[17] + ((uint64_t)(a[14] << 1)) * a[16] +
@@ -775,65 +771,51 @@ static void sqr_nored(uint32_t r[38], const felem a) {
 
   carry = t >> 28;
 
-  r[30] = t - (carry << 28);
+  r[30] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[13] << 1)) * a[18] +
       ((uint64_t)(a[14] << 1)) * a[17] + ((uint64_t)(a[15] << 1)) * a[16];
 
   carry = t >> 28;
 
-  r[31] = t - (carry << 28);
+  r[31] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[14] << 1)) * a[18] +
       ((uint64_t)(a[15] << 1)) * a[17] + ((uint64_t)a[16]) * a[16];
 
   carry = t >> 28;
 
-  r[32] = t - (carry << 28);
+  r[32] = t & bottom28;
 
   t = carry + ((uint64_t)(a[15] << 1)) * a[18] +
       ((uint64_t)(a[16] << 1)) * a[17];
 
   carry = t >> 28;
 
-  r[33] = t - (carry << 28);
+  r[33] = t  & bottom28;
 
   t = carry + ((uint64_t)(a[16] << 1)) * a[18] + ((uint64_t)a[17]) * a[17];
 
   carry = t >> 28;
 
-  r[34] = t - (carry << 28);
+  r[34] = t & bottom28;
 
   t = carry + ((uint64_t)(a[17] << 1)) * a[18];
 
   carry = t >> 28;
 
-  r[35] = t - (carry << 28);
+  r[35] = t  & bottom28;
 
   t = carry + ((uint64_t)a[18]) * a[18];
 
   carry = t >> 28;
 
-  r[36] = t - (carry << 28);
+  r[36] = t  & bottom28;
 
-  t = carry;
-
-  carry = t >> 28;
-
-  r[37] = t - (carry << 28);
+  r[37] = carry;
 }
 
-static void carry_prop_prod(uint32_t cprod[38], uint64_t prod[38], int len) {
-  uint64_t carry = 0;
-  for (int i = 0; i < len; i++) {
-    carry += prod[i];
-    cprod[i] = carry & bottom28;
-    carry = carry >> 28;
-  }
-  cprod[len] = carry;
-}
-
-static void multred(felem r, uint32_t prod[38]) {
+static void multred(felem r, uint32_t *restrict prod) {
   // r will be less then p, and have r[i]<2^28
   uint32_t two17m1 = (((uint64_t)1) << 17) - 1;
   // All prod[i] are now < 2^28, except prod[37] which is at most 2^(58-28) =
